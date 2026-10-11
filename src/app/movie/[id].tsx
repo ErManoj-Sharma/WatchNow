@@ -1,6 +1,7 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Row } from '@/components/progress-bar';
@@ -12,6 +13,7 @@ import { qualityOf } from '@/features/classification/parse';
 
 export default function MovieScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
 
   const reload = useCallback(async () => {
@@ -36,8 +38,7 @@ export default function MovieScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={{ paddingBottom: spacing.xl }}
-      contentInsetAdjustmentBehavior="automatic">
+      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: spacing.xl }}>
       <View style={styles.heroWrap}>
         <Thumb
           mediaId={movie.mediaItemId}

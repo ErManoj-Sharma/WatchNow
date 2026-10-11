@@ -1,6 +1,7 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { ProgressBar } from '@/components/progress-bar';
@@ -33,6 +34,7 @@ function EpisodeItem({ episode, onPress }: { episode: EpisodeRow; onPress: () =>
 
 export default function SeriesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
   const [data, setData] = useState<SeriesData | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
@@ -72,8 +74,7 @@ export default function SeriesScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={{ paddingBottom: spacing.xl }}
-      contentInsetAdjustmentBehavior="automatic">
+      contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: spacing.xl }}>
       <View style={styles.header}>
         <Text style={styles.title}>{data.series.title}</Text>
         <Text style={styles.meta}>
