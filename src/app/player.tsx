@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEventListener } from 'expo';
+import * as Brightness from 'expo-brightness';
 import * as NavigationBar from 'expo-navigation-bar';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { getVolume, setVolume } from 'react-native-volume-manager';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GestureResponderEvent } from 'react-native';
 import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -42,7 +44,7 @@ function remaining(seconds: number): string {
 export default function PlayerScreen() {
   const params = useLocalSearchParams<{ mediaId?: string; entryId?: string }>();
   const mediaId = Number(params.mediaId);
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [media, setMedia] = useState<MediaInfo | null>(null);
   const [entry, setEntry] = useState<EntryMeta | null>(null);
@@ -64,6 +66,13 @@ export default function PlayerScreen() {
   const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapTimeRef = useRef(0);
   const seekFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Vertical swipe: left = brightness, right = volume
+  const swipeRef = useRef({ active: false, startX: 0, startY: 0 });
+  const volStartRef = useRef(0.5);
+  const briStartRef = useRef(0.5);
+  const [adjust, setAdjust] = useState<{ mode: 'volume' | 'brightness'; value: number } | null>(null);
+  const adjustTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resumeRef = useRef(0);
   const seekedRef = useRef(false);
@@ -197,6 +206,19 @@ export default function PlayerScreen() {
     NavigationBar.setVisibilityAsync(controlsVisible ? 'visible' : 'hidden').catch(() => undefined);
   }, [controlsVisible]);
 
+  useEffect(() => {
+    getVolume()
+      .then((r) => {
+        if (typeof r?.volume === 'number') volStartRef.current = r.volume;
+      })
+      .catch(() => undefined);
+    Brightness.getBrightnessAsync()
+      .then((v) => {
+        if (typeof v === 'number') briStartRef.current = v;
+      })
+      .catch(() => undefined);
+  }, []);
+
   const bumpChrome = useCallback(() => {
     setChromeNonce((n) => n + 1);
     setControlsVisible(true);
@@ -271,11 +293,59 @@ export default function PlayerScreen() {
   }, [player]);
 
   // One responder chain for all gestures:
-  //  hold = 2x;  double-tap left/right = -/+10s;  single tap = toggle chrome
+  //  hold = 2x;  vertical swipe L/R = brightness/volume;  double-tap sides = ±10s;  single tap = chrome
+  const onVideoGrant = useCallback(
+    (e: GestureResponderEvent) => {
+      swipeRef.current = { active: false, startX: e.nativeEvent.locationX, startY: e.nativeEvent.locationY };
+      startHold();
+    },
+    [startHold],
+  );
+
+  const onVideoMove = useCallback(
+    (e: GestureResponderEvent) => {
+      const { active, startX, startY } = swipeRef.current;
+      const dy = startY - e.nativeEvent.locationY; // up = positive
+      if (!active) {
+        if (Math.abs(dy) < 12) return;
+        swipeRef.current.active = true;
+        if (holdTimer.current) clearTimeout(holdTimer.current);
+        endHold();
+      }
+      const delta = dy / Math.max(1, height);
+      const leftSide = startX < width / 2;
+      const base = leftSide ? briStartRef.current : volStartRef.current;
+      const value = Math.min(1, Math.max(0, base + delta));
+      setAdjust({ mode: leftSide ? 'brightness' : 'volume', value });
+      if (leftSide) Brightness.setBrightnessAsync(value).catch(() => undefined);
+      else setVolume(value, { type: 'music' }).catch(() => undefined);
+    },
+    [endHold, height, width],
+  );
+
   const onVideoRelease = useCallback(
     (e: GestureResponderEvent) => {
+      const wasSwipe = swipeRef.current.active;
+      swipeRef.current.active = false;
       const wasHold = holdActive.current;
       endHold();
+      if (wasSwipe) {
+        // Linger the level indicator briefly, then refresh base values
+        if (adjustTimer.current) clearTimeout(adjustTimer.current);
+        adjustTimer.current = setTimeout(() => setAdjust(null), 700);
+        bumpChrome();
+        getVolume()
+          .then((r) => {
+            if (typeof r?.volume === 'number') volStartRef.current = r.volume;
+          })
+          .catch(() => undefined);
+        Brightness.getBrightnessAsync()
+          .then((v) => {
+            if (typeof v === 'number') briStartRef.current = v;
+          })
+          .catch(() => undefined);
+        return;
+      }
       if (wasHold) return;
       const now = Date.now();
       if (now - lastTapTimeRef.current < 300) {
@@ -311,6 +381,7 @@ export default function PlayerScreen() {
     return () => {
       if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
       if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
+      if (adjustTimer.current) clearTimeout(adjustTimer.current);
     };
   }, []);
 
@@ -353,17 +424,42 @@ export default function PlayerScreen() {
         fullscreenOptions={{ enable: false }}
       />
 
-      {/* Hold = 2x; double-tap sides = ±10s; single tap toggles chrome */}
+      {/* Gestures: hold = 2x, swipe L/R = brightness/volume, double-tap = ±10s, tap = chrome */}
       {media && !error ? (
         <View
           style={StyleSheet.absoluteFill}
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
-          onResponderGrant={startHold}
+          onResponderGrant={onVideoGrant}
+          onResponderMove={onVideoMove}
           onResponderRelease={onVideoRelease}
           onResponderTerminate={endHold}
           onResponderTerminationRequest={() => true}
         />
+      ) : null}
+
+      {adjust ? (
+        <View
+          style={[styles.seekFlashBox, adjust.mode === 'brightness' ? styles.seekFlashLeft : styles.seekFlashRight]}
+          pointerEvents="none">
+          <Ionicons
+            name={
+              adjust.mode === 'brightness'
+                ? 'sunny'
+                : adjust.value <= 0
+                  ? 'volume-mute'
+                  : adjust.value < 0.5
+                    ? 'volume-low'
+                    : adjust.value < 0.85
+                      ? 'volume-medium'
+                      : 'volume-high'
+            }
+            size={40}
+            color={colors.text}
+            style={styles.seekFlashGlyph}
+          />
+          <Text style={styles.seekFlashText}>{Math.round(adjust.value * 100)}%</Text>
+        </View>
       ) : null}
 
       {seekFlash ? (
