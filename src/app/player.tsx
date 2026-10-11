@@ -2,15 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEventListener } from 'expo';
 import * as Brightness from 'expo-brightness';
 import * as NavigationBar from 'expo-navigation-bar';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { getVolume, setVolume } from 'react-native-volume-manager';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GestureResponderEvent } from 'react-native';
 import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getVolume, setVolume } from 'react-native-volume-manager';
 
 import { Button } from '@/components/button';
 import {
@@ -26,6 +26,9 @@ import { colors, font, spacing } from '@/theme/colors';
 import { formatDuration } from '@/utils/format';
 
 type EntryMeta = Awaited<ReturnType<typeof entryForMedia>>;
+
+const RATIOS = ['Fit', 'Fill', 'Stretch', '16:9', '4:3'] as const;
+type RatioMode = (typeof RATIOS)[number];
 
 function clock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -54,8 +57,12 @@ export default function PlayerScreen() {
   const [durationSec, setDurationSec] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
+  const [ratio, setRatio] = useState<RatioMode>('Fit');
+  const [ratioFlash, setRatioFlash] = useState<RatioMode | null>(null);
+  const ratioFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSpeedBadge, setShowSpeedBadge] = useState(false);
-  const [immersive, setImmersive] = useState(false);
+  // Orientation/immersive toggle removed — player is always landscape
+  // const [immersive, setImmersive] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [chromeNonce, setChromeNonce] = useState(0);
   const [seekFlash, setSeekFlash] = useState<'back' | 'forward' | null>(null);
@@ -401,20 +408,21 @@ export default function PlayerScreen() {
       if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
       if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
       if (adjustTimer.current) clearTimeout(adjustTimer.current);
+      if (ratioFlashTimer.current) clearTimeout(ratioFlashTimer.current);
     };
   }, []);
 
-  const enterImmersive = useCallback(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
-    setImmersive(true);
-  }, []);
+  // Orientation toggle removed — player is always landscape (see mount effect above)
+  // const enterImmersive = useCallback(() => {
+  //   setImmersive(true);
+  // }, []);
 
-  const exitImmersive = useCallback(() => {
-    setImmersive(false);
-    ScreenOrientation.unlockAsync().catch(() => undefined);
-  }, []);
+  // const exitImmersive = useCallback(() => {
+  //   setImmersive(false);
+  // }, []);
 
   useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
     return () => {
       ScreenOrientation.unlockAsync().catch(() => undefined);
     };
@@ -432,16 +440,31 @@ export default function PlayerScreen() {
     )
     : 'Audio';
 
+  const frameAR = ratio === '16:9' ? 16 / 9 : 4 / 3;
+  const frameW = Math.min(width, height * frameAR);
+
   return (
     <View style={styles.container}>
       <StatusBar hidden={!controlsVisible} style="light" />
-      <VideoView
-        player={player}
-        style={StyleSheet.absoluteFill}
-        nativeControls={false}
-        contentFit="contain"
-        fullscreenOptions={{ enable: false }}
-      />
+      {ratio === '16:9' || ratio === '4:3' ? (
+        <View style={styles.ratioFrame}>
+          <VideoView
+            player={player}
+            style={{ width: frameW, height: frameW / frameAR }}
+            nativeControls={false}
+            contentFit="cover"
+            fullscreenOptions={{ enable: false }}
+          />
+        </View>
+      ) : (
+        <VideoView
+          player={player}
+          style={StyleSheet.absoluteFill}
+          nativeControls={false}
+          contentFit={ratio === 'Fit' ? 'contain' : ratio === 'Fill' ? 'cover' : 'fill'}
+          fullscreenOptions={{ enable: false }}
+        />
+      )}
 
       {/* Gestures: hold = 2x, swipe L/R = brightness/volume, double-tap = ±10s, tap = chrome */}
       {media && !error ? (
@@ -505,7 +528,7 @@ export default function PlayerScreen() {
         </Pressable>
       ) : null}
 
-      {controlsVisible && !immersive ? (
+      {controlsVisible ? (
         <View style={[styles.topBar, { paddingTop: insets.top + spacing.xs }]} pointerEvents="box-none">
           <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
             <Text style={styles.backText}>‹ Back</Text>
@@ -519,6 +542,12 @@ export default function PlayerScreen() {
       {showSpeedBadge ? (
         <View style={styles.speedBadge} pointerEvents="none">
           <Text style={styles.speedBadgeText}>2×</Text>
+        </View>
+      ) : null}
+
+      {ratioFlash ? (
+        <View style={styles.speedBadge} pointerEvents="none">
+          <Text style={styles.speedBadgeText}>{ratioFlash}</Text>
         </View>
       ) : null}
 
@@ -620,12 +649,26 @@ export default function PlayerScreen() {
               <Pressable
                 onPress={() => {
                   bumpChrome();
-                  setAudioPickerOpen((o) => !o);
+                  const next = RATIOS[(RATIOS.indexOf(ratio) + 1) % RATIOS.length];
+                  setRatio(next);
+                  setRatioFlash(next);
+                  if (ratioFlashTimer.current) clearTimeout(ratioFlashTimer.current);
+                  ratioFlashTimer.current = setTimeout(() => setRatioFlash(null), 1500);
                 }}
                 hitSlop={8}
                 style={styles.controlChip}>
+                <Text style={styles.controlChipText}>{ratio}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  bumpChrome();
+                  setAudioPickerOpen((o) => !o);
+                }}
+                hitSlop={8}
+                style={[styles.controlChip, { marginRight: spacing.xl }]}>
                 <Text style={styles.controlChipText}>{audioLabel}</Text>
               </Pressable>
+              {/* Player is always landscape now — orientation toggle removed
               <Pressable
                 onPress={() => {
                   bumpChrome();
@@ -636,6 +679,7 @@ export default function PlayerScreen() {
                 style={styles.barIconButton}>
                 <Ionicons name={immersive ? 'contract' : 'expand'} size={22} color={colors.text} />
               </Pressable>
+              */}
             </View>
           </View>
         </View>
@@ -662,6 +706,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  ratioFrame: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   topBar: {
     position: 'absolute',
