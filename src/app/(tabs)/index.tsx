@@ -1,4 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
+import { BlurTargetView } from 'expo-blur';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,6 +28,7 @@ import {
 import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { pickMovieFolder } from '@/features/scanner/roots';
 import { startScan, useScanState } from '@/features/scanner/scan-store';
+import { setBlurTarget } from '@/lib/blur';
 import { getHomePrefs, type HomePrefs } from '@/lib/prefs';
 import { colors, font, radius, spacing } from '@/theme/colors';
 
@@ -38,6 +40,7 @@ export default function HomeScreen() {
   const [prefs, setPrefs] = useState<HomePrefs | null>(null);
   const scan = useScanState();
   const prevStatus = useRef(scan.status);
+  const rootRef = useRef<View>(null);
 
   const reload = useCallback(async () => {
     const r = await getRoot();
@@ -48,6 +51,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setBlurTarget(rootRef.current);
       reload();
     }, [reload]),
   );
@@ -155,9 +159,10 @@ export default function HomeScreen() {
   const isEmpty = (data?.movies.length ?? 0) + (data?.series.length ?? 0) === 0;
 
   return (
+    <BlurTargetView ref={rootRef} style={styles.container}>
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: spacing.xl }}
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: spacing.xl + 72 }}
       contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
         <Text style={styles.logo}>
@@ -220,6 +225,7 @@ export default function HomeScreen() {
       <SectionRow title="Movies" items={movieItems} />
       <SectionRow title="Web Series" items={seriesItems} />
     </ScrollView>
+    </BlurTargetView>
   );
 }
 

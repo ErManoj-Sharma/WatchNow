@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BlurTargetView } from 'expo-blur';
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -34,6 +35,7 @@ import {
 import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { folderStillAccessible, pickMovieFolder } from '@/features/scanner/roots';
 import { startScan } from '@/features/scanner/scan-store';
+import { setBlurTarget } from '@/lib/blur';
 import { getHomePrefs, setHomePref, type HomePrefKey, type HomePrefs } from '@/lib/prefs';
 import {
   checkForLatestRelease,
@@ -218,6 +220,7 @@ export default function SettingsScreen() {
     youtubeShows: true,
     favorites: true,
   });
+  const rootRef = useRef<View>(null);
 
   const installed = getInstalledVersion();
   const hasUpdate = Boolean(latest && compareSemver(latest.version, installed) > 0);
@@ -234,6 +237,7 @@ export default function SettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setBlurTarget(rootRef.current);
       reload();
     }, [reload]),
   );
@@ -310,12 +314,13 @@ export default function SettingsScreen() {
   }, [hasUpdate, latest, checkUpdates]);
 
   return (
+    <BlurTargetView ref={rootRef} style={styles.container}>
     <ScrollView
-      style={styles.container}
+      style={{ flex: 1 }}
       contentContainerStyle={{
         paddingTop: insets.top + spacing.sm,
         paddingHorizontal: spacing.md,
-        paddingBottom: spacing.xl,
+        paddingBottom: spacing.xl + 72,
       }}>
       <Text style={styles.heading}>Settings</Text>
       <ScanIndicator />
@@ -572,6 +577,7 @@ export default function SettingsScreen() {
         </View>
       </InfoModal>
     </ScrollView>
+    </BlurTargetView>
   );
 }
 

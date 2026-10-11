@@ -1,16 +1,25 @@
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { BlurTargetView } from 'expo-blur';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Thumb } from '@/components/thumb';
 import { searchLibrary, type SearchResult } from '@/db/repositories';
+import { setBlurTarget } from '@/lib/blur';
 import { colors, font, radius, spacing } from '@/theme/colors';
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const rootRef = useRef<View>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      setBlurTarget(rootRef.current);
+    }, []),
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -27,7 +36,7 @@ export default function SearchScreen() {
   }, [query]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
+    <BlurTargetView ref={rootRef} style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <Text style={styles.heading}>Search</Text>
       <TextInput
         value={query}
@@ -43,7 +52,7 @@ export default function SearchScreen() {
         data={results}
         keyExtractor={(item) => `${item.kind}-${item.id}`}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: spacing.xl }}
+        contentContainerStyle={{ paddingBottom: spacing.xl + 72 }}
         ListEmptyComponent={
           query.trim() ? (
             <Text style={styles.empty}>No matches</Text>
@@ -82,7 +91,7 @@ export default function SearchScreen() {
           </Pressable>
         )}
       />
-    </View>
+    </BlurTargetView>
   );
 }
 
