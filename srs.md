@@ -56,7 +56,7 @@ Inspect existing project files if the current directory already contains a proje
 If there is no existing project, create it in:
 
 ```text
-~/Projects/offlineflix
+~/Projects/watchnow
 ```
 
 If a project already exists, inspect and reuse it rather than overwriting it.

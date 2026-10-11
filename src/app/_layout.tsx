@@ -1,18 +1,36 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import '@/global.css';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { Stack } from 'expo-router/stack';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
 
-SplashScreen.preventAutoHideAsync();
+import { getDb } from '@/db/database';
+import { colors } from '@/theme/colors';
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    getDb()
+      .then(() => setReady(true))
+      .catch(() => setReady(true));
+  }, []);
+
+  if (!ready) {
+    return <View style={{ flex: 1, backgroundColor: colors.background }} />;
+  }
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="player" options={{ animation: 'fade' }} />
+      </Stack>
+    </>
   );
 }
