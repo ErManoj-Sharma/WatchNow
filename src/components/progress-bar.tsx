@@ -12,9 +12,9 @@ export function ProgressBar({ positionMs, durationMs }: { positionMs: number | n
   );
 }
 
-export function Row({ label, value }: { label: string; value: string }) {
+export function Row({ label, value, divider }: { label: string; value: string; divider?: boolean }) {
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, divider && styles.rowDivider]}>
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue} selectable>
         {value}
@@ -39,6 +39,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  rowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   rowLabel: {
     color: colors.textSecondary,

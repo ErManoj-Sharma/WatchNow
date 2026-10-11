@@ -23,6 +23,26 @@ import { startScan } from '@/features/scanner/scan-store';
 import { colors, font, radius, spacing } from '@/theme/colors';
 import { formatBytes, formatTimestamp } from '@/utils/format';
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.eyebrow}>{title}</Text>
+      <View style={styles.card}>{children}</View>
+    </View>
+  );
+}
+
+function Stat({ value, label, tint }: { value: string; label: string; tint?: string }) {
+  return (
+    <View style={styles.stat}>
+      <Text style={[styles.statValue, tint ? { color: tint } : null]} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [root, setRootState] = useState<ScanRoot | null>(null);
@@ -95,38 +115,54 @@ export default function SettingsScreen() {
         paddingHorizontal: spacing.md,
         paddingBottom: spacing.xl,
       }}>
-      <Text style={styles.heading}>Library Settings</Text>
+      <Text style={styles.heading}>Settings</Text>
       <ScanIndicator />
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Movie folder</Text>
-        <Row label="Name" value={root?.displayName ?? 'Not selected'} />
-        <Row label="Location" value={root?.documentUri ?? '—'} />
-        <Row label="Last scan" value={formatTimestamp(root?.lastSuccessfulScanAt)} />
-        <Row label="Access" value={root ? (accessible ? 'OK' : 'Permission lost — reselect folder') : '—'} />
+      <Section title="Library">
+        <Text style={styles.folderName}>{root?.displayName ?? 'No folder selected'}</Text>
+        <Text style={styles.folderUri} numberOfLines={1} selectable>
+          {root?.documentUri ?? 'Pick a folder to start scanning'}
+        </Text>
+        <Row label="Last scan" value={formatTimestamp(root?.lastSuccessfulScanAt)} divider />
+        <View style={styles.statusRow}>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: !root ? colors.textMuted : accessible ? colors.success : colors.warning },
+            ]}
+          />
+          <Text style={styles.statusText}>
+            {!root ? 'Folder access not set up' : accessible ? 'Folder access OK' : 'Permission lost — reselect the folder'}
+          </Text>
+        </View>
         <View style={styles.actions}>
           <Button label="Rescan library" onPress={() => startScan()} />
-          <Button label="Change folder" variant="secondary" onPress={onChangeFolder} />
+          <Button label={root ? 'Change folder' : 'Choose folder'} variant="secondary" onPress={onChangeFolder} />
           {root && !accessible ? <Button label="Re-grant access" variant="secondary" onPress={onChangeFolder} /> : null}
         </View>
-      </View>
+      </Section>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Index statistics</Text>
-        <Row label="Video files" value={String(stats?.mediaCount ?? 0)} />
-        <Row label="Movies" value={String(stats?.movieCount ?? 0)} />
-        <Row label="Series" value={String(stats?.seriesCount ?? 0)} />
-        <Row label="Episodes" value={String(stats?.episodeCount ?? 0)} />
-        <Row label="Missing files" value={String(stats?.missingCount ?? 0)} />
-        <Row label="Total size" value={formatBytes(stats?.totalBytes) || '—'} />
-      </View>
+      <Section title="Index">
+        <View style={styles.statStrip}>
+          <Stat value={String(stats?.movieCount ?? 0)} label="Movies" />
+          <Stat value={String(stats?.seriesCount ?? 0)} label="Series" />
+          <Stat value={String(stats?.episodeCount ?? 0)} label="Episodes" />
+          <Stat
+            value={String(stats?.missingCount ?? 0)}
+            label="Missing"
+            tint={(stats?.missingCount ?? 0) > 0 ? colors.warning : undefined}
+          />
+        </View>
+        <View style={styles.sizeStrip}>
+          <Row label="Video files" value={String(stats?.mediaCount ?? 0)} divider />
+          <Row label="Total size" value={formatBytes(stats?.totalBytes) || '—'} />
+        </View>
+      </Section>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Online posters</Text>
+      <Section title="Artwork">
         <Text style={styles.hint}>
-          Optional. Fetches poster art from TMDB (movies + shows), TVmaze (shows backup), and OMDb. Local video frames stay as
-          fallback. Keys are stored only on this device. An OMDb key is bundled as default; enter your own to override. Note:
-          TMDB is blocked on some Indian ISPs — TVmaze/OMDb still work.
+          Optional — fetches cover art from TMDB, TVmaze and OMDb; local video frames stay as fallback. Keys are stored only
+          on this device. TMDB is blocked on some Indian ISPs; the others still work.
         </Text>
         <Text style={styles.fieldLabel}>TMDB API key</Text>
         <TextInput
@@ -157,10 +193,9 @@ export default function SettingsScreen() {
         <View style={styles.actions}>
           <Button label="Refresh missing posters" variant="secondary" onPress={onRefreshPosters} />
         </View>
-      </View>
+      </Section>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Maintenance</Text>
+      <Section title="Maintenance">
         <View style={styles.actions}>
           <Button
             label="Clear thumbnail cache"
@@ -173,7 +208,7 @@ export default function SettingsScreen() {
           />
           <Button label="Classification review" variant="secondary" onPress={() => router.push('/review')} />
         </View>
-      </View>
+      </Section>
 
       <Text style={styles.footer}>WatchNow · offline media library · playback never leaves your device</Text>
       <Text style={styles.footer}>
@@ -198,23 +233,82 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginBottom: spacing.md,
   },
+  section: {
+    marginBottom: spacing.lg,
+  },
+  eyebrow: {
+    color: colors.accentSoft,
+    fontSize: font.small,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
+    marginLeft: spacing.xs,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.md,
-    marginBottom: spacing.md,
   },
-  cardTitle: {
+  folderName: {
     color: colors.text,
     fontSize: font.heading,
     fontWeight: '800',
+  },
+  folderUri: {
+    color: colors.textMuted,
+    fontSize: font.small,
+    marginTop: 2,
     marginBottom: spacing.xs,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    color: colors.textSecondary,
+    fontSize: font.caption,
+  },
+  statStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    color: colors.text,
+    fontSize: font.hero,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  statLabel: {
+    color: colors.textMuted,
+    fontSize: font.small,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  sizeStrip: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    marginTop: spacing.xs,
   },
   hint: {
     color: colors.textMuted,
     fontSize: font.small,
-    marginBottom: spacing.sm,
-    lineHeight: font.small * 1.4,
+    marginBottom: spacing.md,
+    lineHeight: font.small * 1.5,
   },
   fieldLabel: {
     color: colors.textSecondary,
@@ -226,14 +320,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
     color: colors.text,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     fontSize: font.body,
   },
   saved: {
-    color: colors.accent,
+    color: colors.success,
     fontSize: font.caption,
     marginTop: spacing.xs,
+    fontWeight: '700',
   },
   link: {
     color: colors.textSecondary,
@@ -241,7 +338,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
   },
   footer: {
     color: colors.textMuted,
