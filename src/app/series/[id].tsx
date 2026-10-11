@@ -1,5 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,6 +7,7 @@ import { Button } from '@/components/button';
 import { ProgressBar } from '@/components/progress-bar';
 import { Thumb } from '@/components/thumb';
 import { getSeries, toggleFavorite, type EpisodeRow, type SeasonRow } from '@/db/repositories';
+import { ensureThumbnail } from '@/features/library/thumbnails';
 import { colors, font, radius, spacing } from '@/theme/colors';
 import { formatDuration } from '@/utils/format';
 
@@ -37,6 +38,7 @@ export default function SeriesScreen() {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<SeriesData | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const probedRef = useRef(false);
 
   const reload = useCallback(async () => {
     const numericId = Number(id);
@@ -54,6 +56,20 @@ export default function SeriesScreen() {
       reload();
     }, [reload]),
   );
+
+  useEffect(() => {
+    if (!data || probedRef.current) return;
+    const pending = data.episodes.filter((e) => e.durationMs == null);
+    if (pending.length === 0) return;
+    probedRef.current = true;
+    let mounted = true;
+    Promise.all(pending.map((e) => ensureThumbnail(e.mediaId))).then(() => {
+      if (mounted) reload();
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [data, reload]);
 
   const seasons: SeasonRow[] = data?.seasons ?? [];
   const episodes = useMemo(() => {

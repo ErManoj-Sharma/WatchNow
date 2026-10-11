@@ -126,7 +126,12 @@ CREATE TABLE app_setting (
 );
 `;
 
+const V3 = `
+UPDATE media_item SET thumbnail_path = NULL;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, sql: V1 },
   { version: 2, sql: V2 },
+  { version: 3, sql: V3 },
 ];

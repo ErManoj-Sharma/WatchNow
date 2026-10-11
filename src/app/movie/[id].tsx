@@ -1,5 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,6 +7,7 @@ import { Button } from '@/components/button';
 import { Row } from '@/components/progress-bar';
 import { Thumb } from '@/components/thumb';
 import { getMovie, toggleFavorite, type MovieDetail } from '@/db/repositories';
+import { ensureThumbnail } from '@/features/library/thumbnails';
 import { colors, font, radius, spacing } from '@/theme/colors';
 import { formatBytes, formatDuration } from '@/utils/format';
 import { qualityOf } from '@/features/classification/parse';
@@ -15,6 +16,7 @@ export default function MovieScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
+  const probedRef = useRef(false);
 
   const reload = useCallback(async () => {
     const numericId = Number(id);
@@ -27,6 +29,18 @@ export default function MovieScreen() {
       reload();
     }, [reload]),
   );
+
+  useEffect(() => {
+    if (!movie || probedRef.current || movie.durationMs != null) return;
+    probedRef.current = true;
+    let mounted = true;
+    ensureThumbnail(movie.mediaItemId).then(() => {
+      if (mounted) reload();
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [movie, reload]);
 
   if (!movie) {
     return <View style={styles.container} />;
