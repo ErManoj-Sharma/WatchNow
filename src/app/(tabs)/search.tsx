@@ -1,7 +1,7 @@
 import { BlurTargetView } from 'expo-blur';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Thumb } from '@/components/thumb';
@@ -14,6 +14,15 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const rootRef = useRef<View>(null);
+
+  const sections = useMemo(() => {
+    const groups = [
+      { title: 'Movies', data: results.filter((r) => r.kind === 'movie') },
+      { title: 'Shows', data: results.filter((r) => r.kind === 'series') },
+      { title: 'Episodes', data: results.filter((r) => r.kind === 'episode') },
+    ];
+    return groups.filter((g) => g.data.length > 0);
+  }, [results]);
 
   useFocusEffect(
     useCallback(() => {
@@ -56,11 +65,12 @@ export default function SearchScreen() {
           {results.length} {results.length === 1 ? 'result' : 'results'}
         </Text>
       ) : null}
-      <FlatList
-        data={results}
+      <SectionList
+        sections={sections}
         keyExtractor={(item) => `${item.kind}-${item.id}`}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: spacing.xl + 72 }}
+        renderSectionHeader={({ section }) => <Text style={styles.sectionTitle}>{section.title}</Text>}
         ListEmptyComponent={
           query.trim() ? (
             <Text style={styles.empty}>No matches</Text>
@@ -101,11 +111,7 @@ export default function SearchScreen() {
               </Text>
               {item.kind === 'episode' ? (
                 <Text style={styles.rowKind}>{`S${item.seasonNumber} E${item.episodeNumber} · ${item.subtitle ?? ''}`}</Text>
-              ) : (
-                <View style={[styles.badge, item.kind === 'series' && styles.badgeSeries]}>
-                  <Text style={styles.badgeText}>{item.kind === 'series' ? 'SERIES' : 'MOVIE'}</Text>
-                </View>
-              )}
+              ) : null}
             </View>
           </Pressable>
         )}
@@ -161,21 +167,14 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: font.caption,
   },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1a2744',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  badgeSeries: {
-    backgroundColor: '#2b1f3d',
-  },
-  badgeText: {
-    color: colors.text,
-    fontSize: 10,
+  sectionTitle: {
+    color: colors.textSecondary,
+    fontSize: font.caption,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   empty: {
     color: colors.textMuted,
