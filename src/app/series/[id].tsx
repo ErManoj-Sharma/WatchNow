@@ -115,7 +115,7 @@ export default function SeriesScreen() {
           />
         ) : null}
         <Button
-          label={data.series.isFavorite ? '✓ In My List' : '+ My List'}
+          label={data.series.isFavorite ? '✓ In Favorites List' : '+ My Favorites'}
           variant="secondary"
           onPress={() => {
             toggleFavorite(data.series.id).then(() => reload());

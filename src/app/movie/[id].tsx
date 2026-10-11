@@ -7,10 +7,10 @@ import { Button } from '@/components/button';
 import { Row } from '@/components/progress-bar';
 import { Thumb } from '@/components/thumb';
 import { getMovie, toggleFavorite, type MovieDetail } from '@/db/repositories';
+import { qualityOf } from '@/features/classification/parse';
 import { ensureThumbnail } from '@/features/library/thumbnails';
 import { colors, font, radius, spacing } from '@/theme/colors';
 import { formatBytes, formatDuration } from '@/utils/format';
-import { qualityOf } from '@/features/classification/parse';
 
 export default function MovieScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -85,7 +85,7 @@ export default function MovieScreen() {
           }
         />
         <Button
-          label={movie.isFavorite ? '✓ In My List' : '+ My List'}
+          label={movie.isFavorite ? '✓ In Favorites List' : '+ My Favorites '}
           variant="secondary"
           onPress={() => {
             toggleFavorite(movie.id).then(() => reload());
