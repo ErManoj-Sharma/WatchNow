@@ -20,7 +20,7 @@ function ContinueCard({ item }: { item: ContinueItem }) {
       }
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.8 }]}>
       <View>
-        <Thumb mediaId={item.mediaId} uri={item.thumbnailPath} width={224} height={126} title={item.displayTitle} />
+        <Thumb mediaId={item.mediaId} uri={item.thumbnailPath} posterUrl={item.posterUrl} width={224} height={126} title={item.displayTitle} />
         <View style={styles.progressOverlay}>
           <ProgressBar positionMs={item.positionMs} durationMs={item.durationMs} />
         </View>

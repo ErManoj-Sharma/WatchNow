@@ -22,6 +22,7 @@ export type MovieDetail = {
   sizeBytes: number | null;
   durationMs: number | null;
   thumbnailPath: string | null;
+  posterUrl: string | null;
   confidence: number;
   needsReview: number;
   positionMs: number | null;
@@ -34,6 +35,7 @@ export type SeriesSummary = {
   id: number;
   title: string;
   thumbnailPath: string | null;
+  posterUrl: string | null;
   coverMediaId: number | null;
   episodeCount: number;
   needsReview: number;
@@ -59,6 +61,7 @@ export type MovieSummary = {
   title: string;
   mediaItemId: number;
   thumbnailPath: string | null;
+  posterUrl: string | null;
   documentUri: string;
   durationMs: number | null;
   sizeBytes: number | null;
@@ -96,6 +99,7 @@ export type ContinueItem = {
   displayTitle: string;
   subtitle: string | null;
   thumbnailPath: string | null;
+  posterUrl: string | null;
   positionMs: number;
   durationMs: number | null;
   documentUri: string;
@@ -107,6 +111,7 @@ export type RecentItem = {
   displayTitle: string;
   subtitle: string | null;
   thumbnailPath: string | null;
+  posterUrl: string | null;
   mediaId: number | null;
   seriesId: number | null;
 };
@@ -117,6 +122,7 @@ export type SearchResult = {
   title: string;
   subtitle: string | null;
   thumbnailPath: string | null;
+  posterUrl: string | null;
   mediaId: number | null;
   seriesId: number | null;
 };
@@ -215,7 +221,7 @@ export async function getHomeData(): Promise<HomeData> {
   const db = await getDb();
   const movies = await db.getAllAsync<MovieSummary>(
     `SELECT e.id, e.title, e.needs_review AS needsReview, m.id AS mediaItemId,
-            m.thumbnail_path AS thumbnailPath, m.document_uri AS documentUri,
+            m.thumbnail_path AS thumbnailPath, m.poster_url AS posterUrl, m.document_uri AS documentUri,
             m.duration_ms AS durationMs, m.size_bytes AS sizeBytes, m.file_name AS fileName
      FROM library_entry e JOIN media_item m ON m.id = e.media_item_id
      WHERE e.kind = 'movie' AND m.availability_status = 'available'
@@ -223,6 +229,7 @@ export async function getHomeData(): Promise<HomeData> {
   );
   const series = await db.getAllAsync<SeriesSummary>(
     `SELECT e.id, e.title, e.confidence, e.needs_review AS needsReview,
+            e.poster_url AS posterUrl,
             ${COVER_THUMB_SUBQUERY} AS thumbnailPath,
             ${COVER_MEDIA_SUBQUERY} AS coverMediaId,
             (SELECT COUNT(*) FROM library_entry ep
@@ -238,9 +245,9 @@ export async function getHomeData(): Promise<HomeData> {
   );
   const progressRows = await db.getAllAsync<{
     media_item_id: number; position_ms: number; duration_ms: number | null;
-    file_name: string; thumbnail_path: string | null; document_uri: string;
+    file_name: string; thumbnail_path: string | null; poster_url: string | null; document_uri: string;
   }>(
-    `SELECT p.media_item_id, p.position_ms, p.duration_ms, m.file_name, m.thumbnail_path, m.document_uri
+    `SELECT p.media_item_id, p.position_ms, p.duration_ms, m.file_name, m.thumbnail_path, m.poster_url, m.document_uri
      FROM playback_progress p JOIN media_item m ON m.id = p.media_item_id
      WHERE p.completed = 0 AND p.position_ms > 15000 AND m.availability_status = 'available'
      ORDER BY p.last_played_at DESC LIMIT 12`,
@@ -256,6 +263,7 @@ export async function getHomeData(): Promise<HomeData> {
       displayTitle: entry.kind === 'episode' && entry.seriesTitle ? entry.seriesTitle : entry.title,
       subtitle: entry.kind === 'episode' ? `S${entry.seasonNumber}E${entry.episodeNumber} · ${entry.title}` : null,
       thumbnailPath: row.thumbnail_path,
+      posterUrl: row.poster_url,
       positionMs: row.position_ms,
       durationMs: row.duration_ms,
       documentUri: row.document_uri,
@@ -266,6 +274,7 @@ export async function getHomeData(): Promise<HomeData> {
             CASE WHEN e.kind = 'episode' THEN ser.title ELSE e.title END AS displayTitle,
             CASE WHEN e.kind = 'episode' THEN 'S' || e.season_number || 'E' || e.episode_number ELSE NULL END AS subtitle,
             COALESCE(m.thumbnail_path, m2.thumbnail_path) AS thumbnailPath,
+            COALESCE(m.poster_url, m2.poster_url) AS posterUrl,
             COALESCE(m.id, m2.id) AS mediaId,
             CASE WHEN e.kind = 'episode' THEN ser.id ELSE e.id END AS seriesId
      FROM library_entry e
@@ -282,6 +291,8 @@ export async function getHomeData(): Promise<HomeData> {
             CASE WHEN e.kind = 'episode' THEN ser.title ELSE NULL END AS subtitle,
             CASE WHEN e.kind = 'series' THEN ${COVER_THUMB_SUBQUERY}
                  ELSE COALESCE(m.thumbnail_path, m2.thumbnail_path) END AS thumbnailPath,
+            CASE WHEN e.kind = 'series' THEN e.poster_url
+                 ELSE COALESCE(m.poster_url, m2.poster_url) END AS posterUrl,
             CASE WHEN e.kind = 'series' THEN ${COVER_MEDIA_SUBQUERY}
                  ELSE COALESCE(m.id, m2.id) END AS mediaId, NULL AS seriesId
      FROM favorite f
@@ -304,7 +315,7 @@ export async function getMovie(id: number): Promise<MovieDetail | null> {
             e.classification_source AS classificationSource,
             m.id AS mediaItemId, m.document_uri AS documentUri, m.relative_path AS relativePath,
             m.file_name AS fileName, m.size_bytes AS sizeBytes, m.duration_ms AS durationMs,
-            m.thumbnail_path AS thumbnailPath,
+            m.thumbnail_path AS thumbnailPath, m.poster_url AS posterUrl,
             p.position_ms AS positionMs, p.completed AS completed,
             (SELECT COUNT(*) FROM favorite WHERE library_entry_id = e.id) AS isFavorite
      FROM library_entry e
@@ -316,10 +327,10 @@ export async function getMovie(id: number): Promise<MovieDetail | null> {
   return (row as unknown as MovieDetail) ?? null;
 }
 
-export async function getSeries(id: number): Promise<{ series: { id: number; title: string; thumbnailPath: string | null; isFavorite: number }; seasons: SeasonRow[]; episodes: EpisodeRow[] } | null> {
+export async function getSeries(id: number): Promise<{ series: { id: number; title: string; thumbnailPath: string | null; posterUrl: string | null; isFavorite: number }; seasons: SeasonRow[]; episodes: EpisodeRow[] } | null> {
   const db = await getDb();
-  const series = await db.getFirstAsync<{ id: number; title: string; thumbnailPath: string | null; isFavorite: number }>(
-    `SELECT e.id, e.title,
+  const series = await db.getFirstAsync<{ id: number; title: string; thumbnailPath: string | null; posterUrl: string | null; isFavorite: number }>(
+    `SELECT e.id, e.title, e.poster_url AS posterUrl,
             (SELECT m.thumbnail_path FROM library_entry se
               JOIN library_entry ep ON ep.parent_id = se.id
               JOIN episode_media em ON em.episode_entry_id = ep.id AND em.is_primary = 1
@@ -366,6 +377,7 @@ export async function searchLibrary(query: string): Promise<SearchResult[]> {
     `SELECT e.id, e.kind, e.title, NULL AS subtitle,
             CASE WHEN e.kind = 'series' THEN ${COVER_THUMB_SUBQUERY}
                  ELSE m.thumbnail_path END AS thumbnailPath,
+            CASE WHEN e.kind = 'series' THEN e.poster_url ELSE m.poster_url END AS posterUrl,
             CASE WHEN e.kind = 'series' THEN ${COVER_MEDIA_SUBQUERY}
                  ELSE m.id END AS mediaId, NULL AS seriesId
      FROM library_entry e LEFT JOIN media_item m ON m.id = e.media_item_id
@@ -474,6 +486,98 @@ export async function clearThumbnailCache(): Promise<number> {
   return cleared;
 }
 
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_setting WHERE key = ?', key);
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO app_setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    key,
+    value.trim(),
+  );
+}
+
+export type PendingPoster =
+  | { target: 'media'; id: number; title: string; fileName: string; kind: 'movie' }
+  | { target: 'entry'; id: number; title: string; fileName: null; kind: 'series' };
+
+export async function listPendingPosters(limit = 40): Promise<PendingPoster[]> {
+  const db = await getDb();
+  const movies = await db.getAllAsync<{ id: number; title: string; file_name: string }>(
+    `SELECT m.id, e.title, m.file_name
+     FROM media_item m
+     JOIN library_entry e ON e.media_item_id = m.id AND e.kind = 'movie'
+     WHERE m.metadata_attempted = 0 AND m.poster_url IS NULL AND m.availability_status = 'available'
+     ORDER BY m.id LIMIT ?`,
+    limit,
+  );
+  const series = await db.getAllAsync<{ id: number; title: string }>(
+    `SELECT id, title FROM library_entry
+     WHERE kind = 'series' AND metadata_attempted = 0 AND poster_url IS NULL
+     ORDER BY id LIMIT ?`,
+    limit,
+  );
+  return [
+    ...movies.map((m) => ({ target: 'media' as const, id: m.id, title: m.title, fileName: m.file_name, kind: 'movie' as const })),
+    ...series.map((s) => ({ target: 'entry' as const, id: s.id, title: s.title, fileName: null, kind: 'series' as const })),
+  ];
+}
+
+export async function setMediaPoster(id: number, posterUrl: string | null, source: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE media_item SET poster_url = ?, poster_source = ?, metadata_attempted = 1, updated_at = ? WHERE id = ?',
+    posterUrl,
+    source,
+    Date.now(),
+    id,
+  );
+}
+
+export async function setEntryPoster(id: number, posterUrl: string | null, source: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE library_entry SET poster_url = ?, poster_source = ?, metadata_attempted = 1, updated_at = ? WHERE id = ?',
+    posterUrl,
+    source,
+    Date.now(),
+    id,
+  );
+}
+
+export async function markMediaAttempted(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE media_item SET metadata_attempted = 1, updated_at = ? WHERE id = ?', Date.now(), id);
+}
+
+export async function markEntryAttempted(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE library_entry SET metadata_attempted = 1, updated_at = ? WHERE id = ?', Date.now(), id);
+}
+
+export async function countPendingPosters(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ c: number }>(
+    `SELECT (SELECT COUNT(*) FROM media_item WHERE metadata_attempted = 0 AND poster_url IS NULL AND availability_status = 'available')
+          + (SELECT COUNT(*) FROM library_entry WHERE kind = 'series' AND metadata_attempted = 0 AND poster_url IS NULL) AS c`,
+  );
+  return row?.c ?? 0;
+}
+
+export async function resetPosterAttempts(): Promise<number> {
+  const db = await getDb();
+  await db.runAsync('UPDATE media_item SET metadata_attempted = 0, updated_at = ? WHERE poster_url IS NULL', Date.now());
+  const res = await db.runAsync(
+    "UPDATE library_entry SET metadata_attempted = 0, updated_at = ? WHERE kind = 'series' AND poster_url IS NULL",
+    Date.now(),
+  );
+  return res.changes;
+}
+
 export async function listReviewItems(): Promise<ReviewItem[]> {
   const db = await getDb();
   return db.getAllAsync<ReviewItem>(
@@ -512,9 +616,7 @@ export async function saveOverride(input: { entryId: number; title?: string; sea
       now,
     );
     if (input.exclude) {
-      await db.runAsync('DELETE FROM favorite WHERE library_entry_id = ?', input.entryId);
-      await db.runAsync('DELETE FROM episode_media WHERE episode_entry_id = ?', input.entryId);
-      await db.runAsync('DELETE FROM library_entry WHERE id = ?', input.entryId);
+      await deleteEntryDeep(db, input.entryId);
     } else {
       await db.runAsync(
         `UPDATE library_entry SET
@@ -595,4 +697,13 @@ export async function getAllOverrides(db: SQLiteDatabase): Promise<Map<string, {
     'SELECT target_relative_path, override_kind, override_title, season_number, episode_number FROM classification_override',
   );
   return new Map(rows.map((r) => [r.target_relative_path, { overrideKind: r.override_kind, overrideTitle: r.override_title, seasonNumber: r.season_number, episodeNumber: r.episode_number }]));
+}
+
+export async function deleteEntryDeep(db: SQLiteDatabase, id: number): Promise<void> {
+  // Children before parents: library_entry.parent_id is a real FK (PRAGMA foreign_keys = ON)
+  const children = await db.getAllAsync<{ id: number }>('SELECT id FROM library_entry WHERE parent_id = ?', id);
+  for (const child of children) await deleteEntryDeep(db, child.id);
+  await db.runAsync('DELETE FROM favorite WHERE library_entry_id = ?', id);
+  await db.runAsync('DELETE FROM episode_media WHERE episode_entry_id = ?', id);
+  await db.runAsync('DELETE FROM library_entry WHERE id = ?', id);
 }

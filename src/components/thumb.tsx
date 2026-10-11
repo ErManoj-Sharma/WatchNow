@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { font, radius } from '@/theme/colors';
@@ -13,6 +14,7 @@ function tintFor(key: number): string {
 export function Thumb({
   mediaId,
   uri,
+  posterUrl,
   width,
   height,
   title,
@@ -20,22 +22,29 @@ export function Thumb({
 }: {
   mediaId?: number | null;
   uri?: string | null;
+  posterUrl?: string | null;
   width: number;
   height: number;
   title?: string;
   borderRadius?: number;
 }) {
-  const path = useThumbnail(mediaId ?? null, uri ?? null);
+  const localPath = useThumbnail(mediaId ?? null, uri ?? null);
+  const [posterFailed, setPosterFailed] = useState(false);
+  const isPoster = Boolean(posterUrl) && !posterFailed;
+  const path = isPoster ? posterUrl : localPath;
   const initial = (title ?? '?').trim().charAt(0).toUpperCase() || '?';
   return (
     <View style={[styles.box, { width, height, borderRadius, backgroundColor: tintFor((mediaId ?? title?.charCodeAt(0) ?? 0) as number) }]}>
       {path ? (
         <Image
-          source={{ uri: path }}
+          source={{ uri: path! }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           transition={200}
-          onError={(error) => console.warn('WatchNow: thumbnail image failed to load', path, error)}
+          onError={(error) => {
+            if (isPoster) setPosterFailed(true);
+            else console.warn('WatchNow: thumbnail image failed to load', path, error);
+          }}
         />
       ) : (
         <Text style={styles.initial}>{initial}</Text>

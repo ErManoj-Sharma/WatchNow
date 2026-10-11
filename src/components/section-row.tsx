@@ -11,6 +11,7 @@ export type CardItem = {
   subtitle?: string | null;
   mediaId?: number | null;
   thumbnailPath?: string | null;
+  posterUrl?: string | null;
   href: { pathname: string; params?: Record<string, string> };
 };
 
@@ -20,7 +21,7 @@ export function PosterCard({ item, width = 112 }: { item: CardItem; width?: numb
     <Pressable
       onPress={() => router.push(item.href as never)}
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.8 }]}>
-      <Thumb mediaId={item.mediaId} uri={item.thumbnailPath} width={width} height={height} title={item.title} />
+      <Thumb mediaId={item.mediaId} uri={item.thumbnailPath} posterUrl={item.posterUrl} width={width} height={height} title={item.title} />
       <Text style={styles.title} numberOfLines={2}>
         {item.title}
       </Text>

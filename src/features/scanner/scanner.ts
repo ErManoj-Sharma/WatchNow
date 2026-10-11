@@ -2,7 +2,7 @@ import { Directory, File } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { getDb } from '@/db/database';
-import { getAllOverrides } from '@/db/repositories';
+import { deleteEntryDeep, getAllOverrides } from '@/db/repositories';
 import { classifyLibrary } from '@/features/classification/classify';
 import {
   isSubtitleFile,
@@ -403,9 +403,7 @@ async function reconcile(
         [...seenEntryIds],
       );
       for (const s of stale) {
-        await db.runAsync('DELETE FROM favorite WHERE library_entry_id = ?', s.id);
-        await db.runAsync('DELETE FROM episode_media WHERE episode_entry_id = ?', s.id);
-        await db.runAsync('DELETE FROM library_entry WHERE id = ?', s.id);
+        await deleteEntryDeep(db, s.id);
       }
     }
   });

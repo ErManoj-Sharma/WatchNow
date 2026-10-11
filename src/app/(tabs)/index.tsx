@@ -24,6 +24,7 @@ import {
   type HomeData,
   type ScanRoot,
 } from '@/db/repositories';
+import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { pickMovieFolder } from '@/features/scanner/roots';
 import { startScan, useScanState } from '@/features/scanner/scan-store';
 import { colors, font, radius, spacing } from '@/theme/colors';
@@ -49,7 +50,14 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    if (prevStatus.current !== 'done' && scan.status === 'done') reload();
+    fetchMissingPosters().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (prevStatus.current !== 'done' && scan.status === 'done') {
+      reload();
+      fetchMissingPosters().catch(() => undefined);
+    }
     prevStatus.current = scan.status;
   }, [scan.status, reload]);
 
@@ -91,6 +99,7 @@ export default function HomeScreen() {
       title: m.title,
       mediaId: m.mediaItemId,
       thumbnailPath: m.thumbnailPath,
+      posterUrl: m.posterUrl,
       href: { pathname: '/movie/[id]', params: { id: String(m.id) } },
     })) ?? [];
   const seriesItems: CardItem[] =
@@ -101,6 +110,7 @@ export default function HomeScreen() {
       subtitle: `${s.episodeCount} episodes`,
       mediaId: s.coverMediaId,
       thumbnailPath: s.thumbnailPath,
+      posterUrl: s.posterUrl,
       href: { pathname: '/series/[id]', params: { id: String(s.id) } },
     })) ?? [];
   const recentItems: CardItem[] =
@@ -111,6 +121,7 @@ export default function HomeScreen() {
       subtitle: r.subtitle,
       mediaId: r.mediaId,
       thumbnailPath: r.thumbnailPath,
+      posterUrl: r.posterUrl,
       href:
         r.kind === 'movie'
           ? { pathname: '/movie/[id]', params: { id: String(r.id) } }
@@ -124,15 +135,18 @@ export default function HomeScreen() {
       subtitle: f.kind === 'series' ? 'Series' : 'Movie',
       mediaId: f.mediaId,
       thumbnailPath: f.thumbnailPath,
+      posterUrl: f.posterUrl,
       href:
         f.kind === 'movie'
           ? { pathname: '/movie/[id]', params: { id: String(f.id) } }
           : { pathname: '/series/[id]', params: { id: String(f.id) } },
     })) ?? [];
 
-  const featuredMovie = data?.movies.find((m) => m.thumbnailPath) ?? data?.movies[0];
+  const featuredMovie = data?.movies.find((m) => m.thumbnailPath || m.posterUrl) ?? data?.movies[0];
   const featuredSeries =
-    !featuredMovie ? (data?.series.find((s) => s.thumbnailPath) ?? data?.series[0]) : undefined;
+    !featuredMovie
+      ? (data?.series.find((s) => s.thumbnailPath || s.posterUrl) ?? data?.series[0])
+      : undefined;
   const heroWidth = width - spacing.md * 2;
   const heroHeight = Math.round(heroWidth * 0.56);
   const isEmpty = (data?.movies.length ?? 0) + (data?.series.length ?? 0) === 0;
@@ -178,6 +192,7 @@ export default function HomeScreen() {
           <Thumb
             mediaId={featuredMovie?.mediaItemId ?? null}
             uri={featuredMovie?.thumbnailPath ?? featuredSeries?.thumbnailPath ?? null}
+            posterUrl={featuredMovie?.posterUrl ?? featuredSeries?.posterUrl ?? null}
             width={heroWidth}
             height={heroHeight}
             title={featuredMovie?.title ?? featuredSeries?.title}

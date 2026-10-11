@@ -111,4 +111,22 @@ CREATE TABLE scan_state (
 );
 `;
 
-export const MIGRATIONS: Migration[] = [{ version: 1, sql: V1 }];
+const V2 = `
+ALTER TABLE media_item ADD COLUMN poster_url TEXT;
+ALTER TABLE media_item ADD COLUMN poster_source TEXT;
+ALTER TABLE media_item ADD COLUMN metadata_attempted INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE library_entry ADD COLUMN poster_url TEXT;
+ALTER TABLE library_entry ADD COLUMN poster_source TEXT;
+ALTER TABLE library_entry ADD COLUMN metadata_attempted INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE app_setting (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`;
+
+export const MIGRATIONS: Migration[] = [
+  { version: 1, sql: V1 },
+  { version: 2, sql: V2 },
+];

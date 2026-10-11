@@ -43,6 +43,7 @@ export default function MovieScreen() {
         <Thumb
           mediaId={movie.mediaItemId}
           uri={movie.thumbnailPath}
+          posterUrl={movie.posterUrl}
           width={400}
           height={230}
           title={movie.title}

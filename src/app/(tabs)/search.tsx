@@ -66,6 +66,7 @@ export default function SearchScreen() {
             <Thumb
               mediaId={item.mediaId}
               uri={item.thumbnailPath}
+              posterUrl={item.posterUrl}
               width={56}
               height={80}
               title={item.title}
