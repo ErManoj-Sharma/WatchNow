@@ -63,6 +63,7 @@ export default function PlayerScreen() {
   const player = useVideoPlayer(null, (p) => {
     p.timeUpdateEventInterval = 0.5;
     p.keepScreenOnWhilePlaying = true;
+    p.preservesPitch = true;
   });
 
   useEffect(() => {
