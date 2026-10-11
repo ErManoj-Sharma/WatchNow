@@ -315,14 +315,15 @@ export default function SettingsScreen() {
 
   return (
     <BlurTargetView ref={rootRef} style={styles.container}>
+    <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.background }}>
+      <Text style={styles.heading}>Settings</Text>
+    </View>
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{
-        paddingTop: insets.top + spacing.sm,
         paddingHorizontal: spacing.md,
         paddingBottom: spacing.xl + 72,
       }}>
-      <Text style={styles.heading}>Settings</Text>
       <ScanIndicator />
 
       <View style={styles.identity}>

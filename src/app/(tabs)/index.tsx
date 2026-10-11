@@ -160,24 +160,23 @@ export default function HomeScreen() {
 
   return (
     <BlurTargetView ref={rootRef} style={styles.container}>
+    <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+      <Text style={styles.logo}>
+        Watch<Text style={styles.logoAccent}>Now</Text>
+      </Text>
+      <View style={styles.headerActions}>
+        <Pressable onPress={() => startScan()} hitSlop={8}>
+          <Text style={styles.headerAction}>Scan</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
+          <Text style={styles.headerAction}>Settings</Text>
+        </Pressable>
+      </View>
+    </View>
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ paddingTop: insets.top + spacing.sm, paddingBottom: spacing.xl + 72 }}
+      contentContainerStyle={{ paddingBottom: spacing.xl + 72 }}
       contentInsetAdjustmentBehavior="automatic">
-      <View style={styles.header}>
-        <Text style={styles.logo}>
-          Watch<Text style={styles.logoAccent}>Now</Text>
-        </Text>
-        <View style={styles.headerActions}>
-          <Pressable onPress={() => startScan()} hitSlop={8}>
-            <Text style={styles.headerAction}>Scan</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
-            <Text style={styles.headerAction}>Settings</Text>
-          </Pressable>
-        </View>
-      </View>
-
       <ScanIndicator />
 
       {isEmpty && scan.status !== 'scanning' && scan.status !== 'indexing' ? (
@@ -252,7 +251,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
   },
   headerActions: {
     flexDirection: 'row',

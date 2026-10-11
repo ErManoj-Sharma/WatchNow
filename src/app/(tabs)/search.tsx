@@ -36,8 +36,11 @@ export default function SearchScreen() {
   }, [query]);
 
   return (
-    <BlurTargetView ref={rootRef} style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
-      <Text style={styles.heading}>Search</Text>
+    <BlurTargetView ref={rootRef} style={styles.container}>
+      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.background }}>
+        <Text style={styles.heading}>Search</Text>
+      </View>
+      <View style={{ flex: 1, paddingHorizontal: spacing.md }}>
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -91,6 +94,7 @@ export default function SearchScreen() {
           </Pressable>
         )}
       />
+      </View>
     </BlurTargetView>
   );
 }
@@ -99,7 +103,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: spacing.md,
   },
   heading: {
     color: colors.text,
