@@ -65,6 +65,17 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 | `625ba91` | double-tap ±10s, centered play/pause, Ionicons UI |
 | `969574a` | tap time → remaining countdown |
 | `b0615d5` | swipe brightness/volume + project.md/context.md docs |
+| `ac51703` | settings UI redesign (eyebrow sections, stat strip, status dot) |
+
+## Backlog (`todo.md`)
+
+- App update feature (EAS Update / "check for updates" in Settings)
+- Share app feature (system share sheet)
+
+## Conventions
+
+- Settings screen pattern: `Section` (red uppercase eyebrow + card) + shared `Row` with optional `divider` prop; Index stats use the `Stat` counter strip.
+- Player gestures all live in the single responder chain in `src/app/player.tsx` — read the architecture note above before touching it.
 
 ## Where things live
 
