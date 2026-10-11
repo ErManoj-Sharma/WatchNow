@@ -39,6 +39,7 @@ export default function PlayerScreen() {
   const [positionSec, setPositionSec] = useState(0);
   const [durationSec, setDurationSec] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [audioPickerOpen, setAudioPickerOpen] = useState(false);
 
   const resumeRef = useRef(0);
   const seekedRef = useRef(false);
@@ -101,7 +102,14 @@ export default function PlayerScreen() {
 
   useEventListener(player, 'statusChange', ({ status, error: playerError }) => {
     if (status === 'error') {
-      setError(playerError?.message ?? 'This file could not be played. The codec or container may be unsupported.');
+      const raw = playerError?.message ?? 'This file could not be played.';
+      // Device lacks a decoder for the audio/video codec (e.g. EAC3/Dolby on many phones)
+      const codecIssue = /decoder init failed|unsupported type|eac3|ac3|no decoder/i.test(raw);
+      setError(
+        codecIssue
+          ? 'Your device cannot decode an audio/video codec in this file (often Dolby/EAC3). Try a different rip with AAC audio, or re-encode the file’s audio to AAC.'
+          : raw,
+      );
       return;
     }
     if (status === 'readyToPlay' && !seekedRef.current) {
@@ -213,6 +221,7 @@ export default function PlayerScreen() {
         nativeControls={!isPortrait}
         contentFit="contain"
         fullscreenOptions={{ enable: true, orientation: 'landscape' }}
+        onFullscreenEnter={() => setAudioPickerOpen(false)}
       />
 
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.xs }]} pointerEvents="box-none">
@@ -263,6 +272,43 @@ export default function PlayerScreen() {
             </View>
           </View>
         </View>
+      ) : null}
+
+      {/* Landscape: native controls lack an audio-track list, so float our own picker trigger */}
+      {!isPortrait && media && !error ? (
+        <>
+          {audioPickerOpen ? (
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setAudioPickerOpen(false)} />
+          ) : null}
+          <Pressable
+            style={[styles.audioFab, { bottom: insets.bottom + 110 }]}
+            onPress={() => setAudioPickerOpen((o) => !o)}
+            hitSlop={8}>
+            <Text style={styles.controlChipText}>
+              {player.audioTrack
+                ? ((val) => (val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio'))(
+                    player.audioTrack.language || player.audioTrack.label,
+                  )
+                : 'Audio'}
+            </Text>
+          </Pressable>
+          {audioPickerOpen ? (
+            <View style={[styles.audioPicker, { bottom: insets.bottom + 150 }]}>
+              <Text style={styles.audioPickerTitle}>Audio track</Text>
+              {player.availableAudioTracks.map((t, i) => (
+                <Pressable
+                  key={t.id ?? i}
+                  onPress={() => {
+                    player.audioTrack = t;
+                    setAudioPickerOpen(false);
+                  }}
+                  style={[styles.audioOption, player.audioTrack?.id === t.id && styles.audioOptionActive]}>
+                  <Text style={styles.audioOptionText}>{t.label || t.language || `Track ${i + 1}`}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </>
       ) : null}
 
       {showNext ? (
@@ -388,6 +434,46 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: font.caption,
     fontWeight: '700',
+  },
+  audioFab: {
+    position: 'absolute',
+    right: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  audioPicker: {
+    position: 'absolute',
+    right: spacing.md,
+    minWidth: 160,
+    maxWidth: 260,
+    borderRadius: 8,
+    backgroundColor: 'rgba(20,20,20,0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: spacing.xs,
+  },
+  audioPickerTitle: {
+    color: colors.textSecondary,
+    fontSize: font.caption,
+    fontWeight: '700',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    textTransform: 'uppercase',
+  },
+  audioOption: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  audioOptionActive: {
+    backgroundColor: 'rgba(255,59,48,0.25)',
+  },
+  audioOptionText: {
+    color: colors.text,
+    fontSize: font.body,
   },
   timeText: {
     color: colors.textSecondary,
