@@ -35,7 +35,7 @@ export function Thumb({
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           transition={200}
-          onError={() => undefined}
+          onError={(error) => console.warn('WatchNow: thumbnail image failed to load', path, error)}
         />
       ) : (
         <Text style={styles.initial}>{initial}</Text>

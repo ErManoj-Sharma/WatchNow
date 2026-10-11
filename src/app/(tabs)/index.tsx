@@ -99,7 +99,7 @@ export default function HomeScreen() {
       kind: 'series' as const,
       title: s.title,
       subtitle: `${s.episodeCount} episodes`,
-      mediaId: null,
+      mediaId: s.coverMediaId,
       thumbnailPath: s.thumbnailPath,
       href: { pathname: '/series/[id]', params: { id: String(s.id) } },
     })) ?? [];

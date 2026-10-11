@@ -34,10 +34,25 @@ export type SeriesSummary = {
   id: number;
   title: string;
   thumbnailPath: string | null;
+  coverMediaId: number | null;
   episodeCount: number;
   needsReview: number;
   confidence: number;
 };
+
+const COVER_MEDIA_SUBQUERY = `(SELECT m2.id FROM library_entry se
+      JOIN library_entry ep ON ep.parent_id = se.id
+      JOIN episode_media em ON em.episode_entry_id = ep.id AND em.is_primary = 1
+      JOIN media_item m2 ON m2.id = em.media_item_id
+      WHERE se.parent_id = e.id AND m2.availability_status = 'available'
+      LIMIT 1)`;
+
+const COVER_THUMB_SUBQUERY = `(SELECT m2.thumbnail_path FROM library_entry se
+      JOIN library_entry ep ON ep.parent_id = se.id
+      JOIN episode_media em ON em.episode_entry_id = ep.id AND em.is_primary = 1
+      JOIN media_item m2 ON m2.id = em.media_item_id
+      WHERE se.parent_id = e.id AND m2.availability_status = 'available' AND m2.thumbnail_path IS NOT NULL
+      LIMIT 1)`;
 
 export type MovieSummary = {
   id: number;
@@ -208,12 +223,8 @@ export async function getHomeData(): Promise<HomeData> {
   );
   const series = await db.getAllAsync<SeriesSummary>(
     `SELECT e.id, e.title, e.confidence, e.needs_review AS needsReview,
-            (SELECT m.thumbnail_path FROM library_entry se
-              JOIN library_entry ep ON ep.parent_id = se.id
-              JOIN episode_media em ON em.episode_entry_id = ep.id AND em.is_primary = 1
-              JOIN media_item m ON m.id = em.media_item_id
-              WHERE se.parent_id = e.id AND m.availability_status = 'available' AND m.thumbnail_path IS NOT NULL
-              LIMIT 1) AS thumbnailPath,
+            ${COVER_THUMB_SUBQUERY} AS thumbnailPath,
+            ${COVER_MEDIA_SUBQUERY} AS coverMediaId,
             (SELECT COUNT(*) FROM library_entry ep
               WHERE ep.parent_id IN (SELECT id FROM library_entry WHERE parent_id = e.id)) AS episodeCount
      FROM library_entry e
@@ -269,8 +280,10 @@ export async function getHomeData(): Promise<HomeData> {
   const favorites = await db.getAllAsync<SearchResult>(
     `SELECT e.id, e.kind, e.title,
             CASE WHEN e.kind = 'episode' THEN ser.title ELSE NULL END AS subtitle,
-            COALESCE(m.thumbnail_path, m2.thumbnail_path) AS thumbnailPath,
-            COALESCE(m.id, m2.id) AS mediaId, NULL AS seriesId
+            CASE WHEN e.kind = 'series' THEN ${COVER_THUMB_SUBQUERY}
+                 ELSE COALESCE(m.thumbnail_path, m2.thumbnail_path) END AS thumbnailPath,
+            CASE WHEN e.kind = 'series' THEN ${COVER_MEDIA_SUBQUERY}
+                 ELSE COALESCE(m.id, m2.id) END AS mediaId, NULL AS seriesId
      FROM favorite f
      JOIN library_entry e ON e.id = f.library_entry_id
      LEFT JOIN library_entry se ON se.id = e.parent_id
@@ -350,7 +363,11 @@ export async function searchLibrary(query: string): Promise<SearchResult[]> {
   const q = `%${query.trim()}%`;
   if (!q.trim()) return [];
   return db.getAllAsync<SearchResult>(
-    `SELECT e.id, e.kind, e.title, NULL AS subtitle, m.thumbnail_path AS thumbnailPath, m.id AS mediaId, NULL AS seriesId
+    `SELECT e.id, e.kind, e.title, NULL AS subtitle,
+            CASE WHEN e.kind = 'series' THEN ${COVER_THUMB_SUBQUERY}
+                 ELSE m.thumbnail_path END AS thumbnailPath,
+            CASE WHEN e.kind = 'series' THEN ${COVER_MEDIA_SUBQUERY}
+                 ELSE m.id END AS mediaId, NULL AS seriesId
      FROM library_entry e LEFT JOIN media_item m ON m.id = e.media_item_id
      WHERE e.kind IN ('movie', 'series') AND e.title LIKE ? COLLATE NOCASE
      UNION
