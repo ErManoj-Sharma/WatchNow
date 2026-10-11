@@ -125,6 +125,8 @@ export type SearchResult = {
   posterUrl: string | null;
   mediaId: number | null;
   seriesId: number | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
 };
 
 export type ReviewItem = {
@@ -379,19 +381,30 @@ export async function searchLibrary(query: string): Promise<SearchResult[]> {
                  ELSE m.thumbnail_path END AS thumbnailPath,
             CASE WHEN e.kind = 'series' THEN e.poster_url ELSE m.poster_url END AS posterUrl,
             CASE WHEN e.kind = 'series' THEN ${COVER_MEDIA_SUBQUERY}
-                 ELSE m.id END AS mediaId, NULL AS seriesId
+                 ELSE m.id END AS mediaId, NULL AS seriesId,
+            NULL AS seasonNumber, NULL AS episodeNumber
      FROM library_entry e LEFT JOIN media_item m ON m.id = e.media_item_id
      WHERE e.kind IN ('movie', 'series') AND e.title LIKE ? COLLATE NOCASE
      UNION
-     SELECT e.id, e.kind, e.title, ser.title AS subtitle, NULL AS thumbnailPath, NULL AS mediaId, ser.id AS seriesId
+     SELECT DISTINCT e.id, e.kind, e.title, ser.title AS subtitle,
+            m2.thumbnail_path AS thumbnailPath, m2.poster_url AS posterUrl, m2.id AS mediaId, ser.id AS seriesId,
+            e.season_number AS seasonNumber, e.episode_number AS episodeNumber
       FROM library_entry e
       JOIN library_entry se ON se.id = e.parent_id
       JOIN library_entry ser ON ser.id = se.parent_id
+      LEFT JOIN episode_media em ON em.episode_entry_id = e.id AND em.is_primary = 1
+      LEFT JOIN media_item m2 ON m2.id = em.media_item_id
       WHERE e.kind = 'episode' AND e.title LIKE ? COLLATE NOCASE
      UNION
-     SELECT DISTINCT e.id, e.kind, e.title, NULL AS subtitle, m2.thumbnail_path AS thumbnailPath, m2.id AS mediaId, NULL AS seriesId
+     SELECT DISTINCT e.id, e.kind, e.title,
+            (SELECT ser.title FROM library_entry se JOIN library_entry ser ON ser.id = se.parent_id WHERE se.id = e.parent_id) AS subtitle,
+            COALESCE(m2.thumbnail_path, m.thumbnail_path) AS thumbnailPath,
+            COALESCE(m2.poster_url, m.poster_url) AS posterUrl,
+            COALESCE(m2.id, m.id) AS mediaId,
+            (SELECT ser.id FROM library_entry se JOIN library_entry ser ON ser.id = se.parent_id WHERE se.id = e.parent_id) AS seriesId,
+            e.season_number AS seasonNumber, e.episode_number AS episodeNumber
       FROM library_entry e
-      LEFT JOIN episode_media em ON em.episode_entry_id = e.id
+      LEFT JOIN episode_media em ON em.episode_entry_id = e.id AND em.is_primary = 1
       LEFT JOIN media_item m2 ON m2.id = em.media_item_id
       LEFT JOIN media_item m ON m.id = e.media_item_id
       WHERE m.file_name LIKE ? COLLATE NOCASE OR m2.file_name LIKE ? COLLATE NOCASE

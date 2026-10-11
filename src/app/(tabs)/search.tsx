@@ -30,7 +30,7 @@ export default function SearchScreen() {
       }
       searchLibrary(trimmed)
         .then((rows) => setResults(rows))
-        .catch(() => undefined);
+        .catch((e) => console.warn('WatchNow: search failed', e));
     }, 250);
     return () => clearTimeout(timer);
   }, [query]);
@@ -51,6 +51,11 @@ export default function SearchScreen() {
         autoCapitalize="none"
         returnKeyType="search"
       />
+      {query.trim() ? (
+        <Text style={styles.count}>
+          {results.length} {results.length === 1 ? 'result' : 'results'}
+        </Text>
+      ) : null}
       <FlatList
         data={results}
         keyExtractor={(item) => `${item.kind}-${item.id}`}
@@ -67,8 +72,15 @@ export default function SearchScreen() {
           <Pressable
             style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surfaceRaised }]}
             onPress={() => {
-              if (item.kind === 'episode' && item.seriesId) {
-                router.push({ pathname: '/series/[id]', params: { id: String(item.seriesId) } } as never);
+              if (item.kind === 'episode') {
+                if (item.mediaId) {
+                  router.push({
+                    pathname: '/player',
+                    params: { mediaId: String(item.mediaId), entryId: String(item.id) },
+                  } as never);
+                } else if (item.seriesId) {
+                  router.push({ pathname: '/series/[id]', params: { id: String(item.seriesId) } } as never);
+                }
               } else if (item.kind === 'series') {
                 router.push({ pathname: '/series/[id]', params: { id: String(item.id) } } as never);
               } else {
@@ -87,9 +99,13 @@ export default function SearchScreen() {
               <Text style={styles.rowTitle} numberOfLines={2}>
                 {item.title}
               </Text>
-              <Text style={styles.rowKind}>
-                {item.kind === 'series' ? 'Series' : item.kind === 'episode' ? `Episode${item.subtitle ? ` · ${item.subtitle}` : ''}` : 'Movie'}
-              </Text>
+              {item.kind === 'episode' ? (
+                <Text style={styles.rowKind}>{`S${item.seasonNumber} E${item.episodeNumber} · ${item.subtitle ?? ''}`}</Text>
+              ) : (
+                <View style={[styles.badge, item.kind === 'series' && styles.badgeSeries]}>
+                  <Text style={styles.badgeText}>{item.kind === 'series' ? 'SERIES' : 'MOVIE'}</Text>
+                </View>
+              )}
             </View>
           </Pressable>
         )}
@@ -119,6 +135,11 @@ const styles = StyleSheet.create({
     fontSize: font.body,
     marginBottom: spacing.md,
   },
+  count: {
+    color: colors.textSecondary,
+    fontSize: font.caption,
+    marginBottom: spacing.sm,
+  },
   row: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -139,6 +160,22 @@ const styles = StyleSheet.create({
   rowKind: {
     color: colors.textSecondary,
     fontSize: font.caption,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1a2744',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  badgeSeries: {
+    backgroundColor: '#2b1f3d',
+  },
+  badgeText: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   empty: {
     color: colors.textMuted,
