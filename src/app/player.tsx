@@ -76,6 +76,7 @@ export default function PlayerScreen() {
 
   const resumeRef = useRef(0);
   const seekedRef = useRef(false);
+  const nextCheckedRef = useRef(false);
   const lastSavedRef = useRef(0);
   // Last-known values so saveNow() never touches the native player (it may already
   // be released when the focus cleanup runs on back-navigation).
@@ -128,7 +129,7 @@ export default function PlayerScreen() {
       setShowNext({
         mediaId: next.mediaId,
         episodeId: next.episodeId,
-        label: `Play next · S${next.seasonNumber}E${next.episodeNumber} ${next.title}`,
+        label: `S${next.seasonNumber}E${next.episodeNumber}`,
       });
     }
   }, [entry]);
@@ -138,10 +139,14 @@ export default function PlayerScreen() {
       const raw = playerError?.message ?? 'This file could not be played.';
       // Device lacks a decoder for the audio/video codec (e.g. EAC3/Dolby on many phones)
       const codecIssue = /decoder init failed|unsupported type|eac3|ac3|no decoder/i.test(raw);
+      // MKV seek index (Cues) damaged — a seek lands on invalid EBML bytes mid-file
+      const indexIssue = /varint length mask/i.test(raw);
       setError(
         codecIssue
           ? 'Your device cannot decode an audio/video codec in this file (often Dolby/EAC3). Try a different rip with AAC audio, or re-encode the file’s audio to AAC.'
-          : raw,
+          : indexIssue
+            ? 'This file’s seek index is damaged, so skipping ahead failed. Try again from an earlier point, or re-mux the file (e.g. “ffmpeg -i in.mkv -c copy out.mkv”) to rebuild the index.'
+            : raw,
       );
       return;
     }
@@ -164,6 +169,17 @@ export default function PlayerScreen() {
     lastPosRef.current = currentTime;
     if (player.duration > 0) lastDurRef.current = player.duration;
     setPositionSec(currentTime);
+    // Offer next episode in the last 3 minutes; retract if the user seeks back
+    if (lastDurRef.current > 0) {
+      const remaining = lastDurRef.current - currentTime;
+      if (remaining <= 180 && remaining > 5 && !nextCheckedRef.current) {
+        nextCheckedRef.current = true;
+        loadNext();
+      } else if (remaining > 180 && nextCheckedRef.current) {
+        nextCheckedRef.current = false;
+        setShowNext(null);
+      }
+    }
     const now = Date.now();
     if (now - lastSavedRef.current > 10000) {
       lastSavedRef.current = now;
@@ -174,7 +190,10 @@ export default function PlayerScreen() {
   useEventListener(player, 'playToEnd', () => {
     lastPosRef.current = lastDurRef.current;
     saveNow(true);
-    loadNext();
+    if (!nextCheckedRef.current) {
+      nextCheckedRef.current = true;
+      loadNext();
+    }
   });
 
   useFocusEffect(
@@ -532,6 +551,28 @@ export default function PlayerScreen() {
 
       {controlsVisible && media && !error ? (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.sm }]}>
+          {showNext ? (
+            <View style={styles.nextRow}>
+              <Pressable
+                hitSlop={8}
+                onPress={() => {
+                  seekedRef.current = false;
+                  resumeRef.current = 0;
+                  nextCheckedRef.current = false;
+                  setShowNext(null);
+                  setMedia(null);
+                  setEntry(null);
+                  router.replace({
+                    pathname: '/player',
+                    params: { mediaId: String(showNext.mediaId), entryId: String(showNext.episodeId) },
+                  } as never);
+                }}
+                style={styles.nextChip}>
+                <Ionicons name="play-skip-forward" size={13} color="#000" />
+                <Text style={styles.nextChipText}>{showNext.label}</Text>
+              </Pressable>
+            </View>
+          ) : null}
           <View
             style={styles.seekHit}
             onLayout={(e) => (barWidthRef.current = e.nativeEvent.layout.width)}
@@ -597,25 +638,6 @@ export default function PlayerScreen() {
               </Pressable>
             </View>
           </View>
-        </View>
-      ) : null}
-
-      {showNext ? (
-        <View style={[styles.nextBar, { bottom: (controlsVisible ? 96 : 16) + insets.bottom + spacing.xl }]}>
-          <Button
-            label={showNext.label}
-            onPress={() => {
-              seekedRef.current = false;
-              resumeRef.current = 0;
-              setShowNext(null);
-              setMedia(null);
-              setEntry(null);
-              router.replace({
-                pathname: '/player',
-                params: { mediaId: String(showNext.mediaId), entryId: String(showNext.episodeId) },
-              } as never);
-            }}
-          />
         </View>
       ) : null}
 
@@ -826,10 +848,25 @@ const styles = StyleSheet.create({
     fontSize: font.caption,
     fontVariant: ['tabular-nums'],
   },
-  nextBar: {
-    position: 'absolute',
-    left: spacing.lg,
-    right: spacing.lg,
+  nextRow: {
+    alignItems: 'flex-end',
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  nextChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginRight: spacing.md,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  nextChipText: {
+    color: '#000',
+    fontSize: font.caption,
+    fontWeight: '800',
   },
   errorOverlay: {
     position: 'absolute',
