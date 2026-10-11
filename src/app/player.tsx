@@ -2,7 +2,8 @@ import { useEventListener } from 'expo';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { GestureResponderEvent } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
@@ -16,24 +17,43 @@ import {
   type MediaInfo,
 } from '@/db/repositories';
 import { colors, font, spacing } from '@/theme/colors';
+import { formatDuration } from '@/utils/format';
 
 type EntryMeta = Awaited<ReturnType<typeof entryForMedia>>;
+
+function clock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  return formatDuration(Math.round(seconds * 1000));
+}
 
 export default function PlayerScreen() {
   const params = useLocalSearchParams<{ mediaId?: string; entryId?: string }>();
   const mediaId = Number(params.mediaId);
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const isPortrait = height >= width;
   const [media, setMedia] = useState<MediaInfo | null>(null);
   const [entry, setEntry] = useState<EntryMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showNext, setShowNext] = useState<{ mediaId: number; episodeId: number; label: string } | null>(null);
+  const [positionSec, setPositionSec] = useState(0);
+  const [durationSec, setDurationSec] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   const resumeRef = useRef(0);
   const seekedRef = useRef(false);
   const lastSavedRef = useRef(0);
+  // Last-known values so saveNow() never touches the native player (it may already
+  // be released when the focus cleanup runs on back-navigation).
+  const lastPosRef = useRef(0);
+  const lastDurRef = useRef(0);
+
+  const videoRef = useRef<VideoView>(null);
+  const barWidthRef = useRef(1);
+  const dragRef = useRef<number | null>(null);
 
   const player = useVideoPlayer(null, (p) => {
-    p.timeUpdateEventInterval = 5;
+    p.timeUpdateEventInterval = 0.5;
     p.keepScreenOnWhilePlaying = true;
   });
 
@@ -46,7 +66,7 @@ export default function PlayerScreen() {
         setMedia(m);
         setEntry(e);
         if (prog && !prog.completed) resumeRef.current = prog.positionMs;
-        if (m) player.replace(m.documentUri);
+        if (m) player.replaceAsync(m.documentUri).catch(() => setError('Could not load file'));
         else setError('File not found');
       })
       .catch(() => mounted && setError('Could not load file'));
@@ -58,13 +78,13 @@ export default function PlayerScreen() {
   const saveNow = useCallback(
     (completed?: boolean) => {
       if (!Number.isFinite(mediaId)) return;
-      const positionMs = player.currentTime * 1000;
-      const durationMs = player.duration > 0 ? player.duration * 1000 : null;
+      const positionMs = lastPosRef.current * 1000;
+      const durationMs = lastDurRef.current > 0 ? lastDurRef.current * 1000 : null;
       if (positionMs < 1000 && !completed) return;
       saveProgress(mediaId, positionMs, durationMs, completed).catch(() => undefined);
       if (durationMs) updateMediaDuration(mediaId, durationMs).catch(() => undefined);
     },
-    [mediaId, player],
+    [mediaId],
   );
 
   const loadNext = useCallback(async () => {
@@ -86,15 +106,23 @@ export default function PlayerScreen() {
     }
     if (status === 'readyToPlay' && !seekedRef.current) {
       seekedRef.current = true;
-      if (player.duration > 0) updateMediaDuration(mediaId, player.duration * 1000).catch(() => undefined);
+      if (player.duration > 0) {
+        lastDurRef.current = player.duration;
+        setDurationSec(player.duration);
+        updateMediaDuration(mediaId, player.duration * 1000).catch(() => undefined);
+      }
       if (resumeRef.current > 5) {
         player.currentTime = resumeRef.current / 1000;
       }
       player.play();
+      setPlaying(true);
     }
   });
 
   useEventListener(player, 'timeUpdate', ({ currentTime }) => {
+    lastPosRef.current = currentTime;
+    if (player.duration > 0) lastDurRef.current = player.duration;
+    setPositionSec(currentTime);
     const now = Date.now();
     if (now - lastSavedRef.current > 10000) {
       lastSavedRef.current = now;
@@ -103,6 +131,7 @@ export default function PlayerScreen() {
   });
 
   useEventListener(player, 'playToEnd', () => {
+    lastPosRef.current = lastDurRef.current;
     saveNow(true);
     loadNext();
   });
@@ -115,17 +144,73 @@ export default function PlayerScreen() {
     }, [saveNow]),
   );
 
+  const togglePlay = useCallback(() => {
+    if (player.playing) {
+      player.pause();
+      setPlaying(false);
+    } else {
+      player.play();
+      setPlaying(true);
+    }
+  }, [player]);
+
+  const cycleSubtitle = useCallback(() => {
+    const tracks = player.availableSubtitleTracks;
+    if (tracks.length === 0) return;
+    const current = player.subtitleTrack;
+    if (!current) {
+      // Off → first track
+      const first = tracks.find((t) => t.id !== 'off') ?? tracks[0];
+      player.subtitleTrack = first;
+      return;
+    }
+    const idx = tracks.findIndex((t) => t.id === current.id);
+    // Past the last track → off
+    player.subtitleTrack = idx >= 0 && idx + 1 < tracks.length ? tracks[idx + 1] : null;
+  }, [player]);
+
+  const cycleAudio = useCallback(() => {
+    const tracks = player.availableAudioTracks;
+    if (tracks.length === 0) return;
+    const currentId = player.audioTrack?.id;
+    const idx = tracks.findIndex((t) => t.id === currentId);
+    player.audioTrack = tracks[(idx + 1) % tracks.length];
+  }, [player]);
+
+  const seekRatio = (locationX: number) => Math.min(1, Math.max(0, locationX / Math.max(1, barWidthRef.current)));
+
+  const onSeekGrant = useCallback((e: GestureResponderEvent) => {
+    dragRef.current = seekRatio(e.nativeEvent.locationX) * lastDurRef.current;
+    setPositionSec(dragRef.current);
+  }, []);
+
+  const onSeekMove = useCallback((e: GestureResponderEvent) => {
+    dragRef.current = seekRatio(e.nativeEvent.locationX) * lastDurRef.current;
+    setPositionSec(dragRef.current);
+  }, []);
+
+  const onSeekRelease = useCallback(() => {
+    if (dragRef.current != null) {
+      player.currentTime = dragRef.current;
+      lastPosRef.current = dragRef.current;
+    }
+    dragRef.current = null;
+  }, [player]);
+
   const displayTitle =
     entry?.kind === 'episode' && entry.seriesTitle
       ? `${entry.seriesTitle} · S${entry.seasonNumber}E${entry.episodeNumber}`
       : (media?.fileName ?? '');
 
+  const subtitleLabel = player.subtitleTrack && player.subtitleTrack.id !== 'off' ? 'CC ON' : 'CC';
+
   return (
     <View style={styles.container}>
       <VideoView
+        ref={videoRef}
         player={player}
         style={StyleSheet.absoluteFill}
-        nativeControls
+        nativeControls={!isPortrait}
         contentFit="contain"
         fullscreenOptions={{ enable: true, orientation: 'landscape' }}
       />
@@ -139,8 +224,49 @@ export default function PlayerScreen() {
         </Text>
       </View>
 
+      {isPortrait && media && !error ? (
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.sm }]}>
+          <View
+            style={styles.seekHit}
+            onLayout={(e) => (barWidthRef.current = e.nativeEvent.layout.width)}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={onSeekGrant}
+            onResponderMove={onSeekMove}
+            onResponderRelease={onSeekRelease}>
+            <View style={styles.seekTrack}>
+              <View style={[styles.seekFill, { width: `${durationSec > 0 ? Math.min(100, (positionSec / durationSec) * 100) : 0}%` }]} />
+            </View>
+          </View>
+          <View style={styles.controlsRow}>
+            <Pressable onPress={togglePlay} hitSlop={8}>
+              <Text style={styles.controlIcon}>{playing ? '❚❚' : '▶'}</Text>
+            </Pressable>
+            <Text style={styles.timeText}>
+              {clock(positionSec)} / {clock(durationSec)}
+            </Text>
+            <View style={styles.controlsRight}>
+              <Pressable onPress={cycleSubtitle} hitSlop={8} style={styles.controlChip}>
+                <Text style={styles.controlChipText}>{subtitleLabel}</Text>
+              </Pressable>
+              <Pressable onPress={cycleAudio} hitSlop={8} style={styles.controlChip}>
+                <Text style={styles.controlChipText}>
+                  {player.audioTrack
+                    ? (val => val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio')(player.audioTrack.language || player.audioTrack.label)
+                    : 'Audio'}
+                </Text>
+
+              </Pressable>
+              <Pressable onPress={() => videoRef.current?.enterFullscreen()} hitSlop={8}>
+                <Text style={styles.controlIcon}>⛶</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
       {showNext ? (
-        <View style={[styles.nextBar, { bottom: insets.bottom + spacing.xl }]}>
+        <View style={[styles.nextBar, { bottom: (isPortrait ? 96 : 0) + insets.bottom + spacing.xl }]}>
           <Button
             label={showNext.label}
             onPress={() => {
@@ -184,13 +310,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    right: 0,
+    // Stop before the native controls' top-right cluster (landscape)
+    right: 112,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
-    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   back: {
     paddingVertical: spacing.xs,
@@ -199,12 +325,74 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: font.body,
     fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   title: {
     color: colors.text,
     fontSize: font.body,
     fontWeight: '600',
     flex: 1,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  seekHit: {
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+  },
+  seekTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    overflow: 'hidden',
+  },
+  seekFill: {
+    height: 4,
+    backgroundColor: colors.accent,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  controlsRight: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  controlIcon: {
+    color: colors.text,
+    fontSize: font.title,
+    fontWeight: '700',
+  },
+  controlChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  controlChipText: {
+    color: colors.text,
+    fontSize: font.caption,
+    fontWeight: '700',
+  },
+  timeText: {
+    color: colors.textSecondary,
+    fontSize: font.caption,
+    fontVariant: ['tabular-nums'],
   },
   nextBar: {
     position: 'absolute',
