@@ -20,7 +20,7 @@ export default function MovieScreen() {
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const probedRef = useRef(false);
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const [scrollY] = useState(() => new Animated.Value(0));
 
   const reload = useCallback(async () => {
     const numericId = Number(id);
