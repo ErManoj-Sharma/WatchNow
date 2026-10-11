@@ -27,6 +27,7 @@ import {
 import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { pickMovieFolder } from '@/features/scanner/roots';
 import { startScan, useScanState } from '@/features/scanner/scan-store';
+import { getHomePrefs, type HomePrefs } from '@/lib/prefs';
 import { colors, font, radius, spacing } from '@/theme/colors';
 
 export default function HomeScreen() {
@@ -34,12 +35,14 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const [root, setRootState] = useState<ScanRoot | null | undefined>(undefined);
   const [data, setData] = useState<HomeData | null>(null);
+  const [prefs, setPrefs] = useState<HomePrefs | null>(null);
   const scan = useScanState();
   const prevStatus = useRef(scan.status);
 
   const reload = useCallback(async () => {
     const r = await getRoot();
     setRootState(r);
+    setPrefs(await getHomePrefs());
     if (r) setData(await getHomeData());
   }, []);
 
@@ -211,8 +214,8 @@ export default function HomeScreen() {
 
       <View style={{ height: spacing.lg }} />
 
-      <ContinueRow items={data?.continueWatching ?? []} />
-      <SectionRow title="Recently Added" items={recentItems} />
+      <ContinueRow items={prefs?.continueWatching === false ? [] : (data?.continueWatching ?? [])} />
+      {prefs?.recentlyAdded === false ? null : <SectionRow title="Recently Added" items={recentItems} />}
       <SectionRow title="Movies" items={movieItems} />
       <SectionRow title="Web Series" items={seriesItems} />
       <SectionRow title="My List" items={favoriteItems} />

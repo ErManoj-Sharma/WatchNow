@@ -11,6 +11,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -33,6 +34,7 @@ import {
 import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { folderStillAccessible, pickMovieFolder } from '@/features/scanner/roots';
 import { startScan } from '@/features/scanner/scan-store';
+import { getHomePrefs, setHomePref, type HomePrefs, type HomePrefKey } from '@/lib/prefs';
 import {
   checkForLatestRelease,
   compareSemver,
@@ -56,6 +58,47 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Divider() {
   return <View style={styles.divider} />;
+}
+
+function ToggleRow({
+  icon,
+  label,
+  hint,
+  value,
+  onValueChange,
+  divider,
+}: {
+  icon: IoniconName;
+  label: string;
+  hint?: string;
+  value: boolean;
+  onValueChange: (v: boolean) => void;
+  divider?: boolean;
+}) {
+  return (
+    <>
+      <View style={styles.row}>
+        <Ionicons name={icon} size={18} color={colors.textSecondary} style={styles.rowIcon} />
+        <View style={styles.rowBody}>
+          <Text style={styles.rowLabel} numberOfLines={1}>
+            {label}
+          </Text>
+          {hint ? (
+            <Text style={styles.rowHint} numberOfLines={2}>
+              {hint}
+            </Text>
+          ) : null}
+        </View>
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          trackColor={{ false: colors.surfaceHover, true: colors.accent }}
+          thumbColor="#ffffff"
+        />
+      </View>
+      {divider ? <Divider /> : null}
+    </>
+  );
 }
 
 function SettingRow({
@@ -168,6 +211,8 @@ export default function SettingsScreen() {
   const [checked, setChecked] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [prefs, setPrefs] = useState<HomePrefs>({ recentlyAdded: true, continueWatching: true, youtubeShows: true });
 
   const installed = getInstalledVersion();
   const hasUpdate = Boolean(latest && compareSemver(latest.version, installed) > 0);
@@ -179,6 +224,7 @@ export default function SettingsScreen() {
     if (r) setAccessible(folderStillAccessible(r.documentUri));
     setTmdbKey((await getSetting('tmdb_api_key')) ?? '');
     setOmdbKey((await getSetting('omdb_api_key')) ?? '');
+    setPrefs(await getHomePrefs());
   }, []);
 
   useFocusEffect(
@@ -201,6 +247,11 @@ export default function SettingsScreen() {
       setChecked(true);
     });
   }, [checked]);
+
+  const onTogglePref = useCallback((key: HomePrefKey, value: boolean) => {
+    setPrefs((p) => ({ ...p, [key]: value }));
+    setHomePref(key, value).catch(() => undefined);
+  }, []);
 
   const onChangeFolder = useCallback(async () => {
     const picked = await pickMovieFolder();
@@ -276,6 +327,15 @@ export default function SettingsScreen() {
           <Text style={styles.versionPillText}>{installed}</Text>
         </View>
       </View>
+
+      <Section title="Customization">
+        <SettingRow
+          icon="options-outline"
+          label="Home screen sections"
+          hint="Choose what appears on the Home tab"
+          onPress={() => setCustomOpen(true)}
+        />
+      </Section>
 
       <Section title="Library">
         <SettingRow
@@ -414,6 +474,35 @@ export default function SettingsScreen() {
         </Text>
         . Movie data from OMDb.
       </Text>
+
+      <InfoModal visible={customOpen} title="Customization" onClose={() => setCustomOpen(false)}>
+        <Text style={styles.hint}>Show or hide sections on the Home tab. Changes apply the next time Home loads.</Text>
+        <View style={styles.modalRows}>
+          <ToggleRow
+            icon="time-outline"
+            label="Show recently added"
+            hint="Row of the newest movies and series"
+            value={prefs.recentlyAdded}
+            onValueChange={(v) => onTogglePref('recentlyAdded', v)}
+            divider
+          />
+          <ToggleRow
+            icon="play-circle-outline"
+            label="Show continue watching"
+            hint="Row of half-watched videos"
+            value={prefs.continueWatching}
+            onValueChange={(v) => onTogglePref('continueWatching', v)}
+            divider
+          />
+          <ToggleRow
+            icon="logo-youtube"
+            label="Show YouTube shows"
+            hint="Coming in a future update"
+            value={prefs.youtubeShows}
+            onValueChange={(v) => onTogglePref('youtubeShows', v)}
+          />
+        </View>
+      </InfoModal>
 
       <InfoModal visible={artworkOpen} title="Artwork" onClose={() => setArtworkOpen(false)}>
         <Text style={styles.hint}>
