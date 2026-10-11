@@ -282,14 +282,6 @@ async function reconcile(
       if (filesIndexed % 100 === 0) emit({ filesIndexed });
     }
 
-    if (!shouldCancel()) {
-      for (const row of existing) {
-        if (!seenIds.has(row.id)) {
-          await db.runAsync("UPDATE media_item SET availability_status = 'missing', updated_at = ? WHERE id = ?", now, row.id);
-        }
-      }
-    }
-
     const lib = classifyLibrary(videos);
     const seenEntryIds = new Set<number>();
 
@@ -404,6 +396,28 @@ async function reconcile(
       );
       for (const s of stale) {
         await deleteEntryDeep(db, s.id);
+      }
+    }
+
+    // ponytail: files deleted from disk are purged outright (no 'missing' ghost
+    // rows). A file moved between scans counts as delete + re-add (watch
+    // progress lost); same-scan moves are still recovered by name+size above.
+    if (!shouldCancel()) {
+      for (const row of existing) {
+        if (seenIds.has(row.id)) continue;
+        const refEntries = await db.getAllAsync<{ id: number }>(
+          'SELECT id FROM library_entry WHERE media_item_id = ?',
+          row.id,
+        );
+        const epEntries = await db.getAllAsync<{ id: number }>(
+          'SELECT episode_entry_id AS id FROM episode_media WHERE media_item_id = ?',
+          row.id,
+        );
+        for (const e of new Set([...refEntries, ...epEntries].map((x) => x.id))) {
+          await deleteEntryDeep(db, e);
+        }
+        await db.runAsync('DELETE FROM playback_progress WHERE media_item_id = ?', row.id);
+        await db.runAsync('DELETE FROM media_item WHERE id = ?', row.id);
       }
     }
   });
