@@ -1,12 +1,13 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useEventListener } from 'expo';
 import * as NavigationBar from 'expo-navigation-bar';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GestureResponderEvent } from 'react-native';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
@@ -32,6 +33,7 @@ function clock(seconds: number): string {
 export default function PlayerScreen() {
   const params = useLocalSearchParams<{ mediaId?: string; entryId?: string }>();
   const mediaId = Number(params.mediaId);
+  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [media, setMedia] = useState<MediaInfo | null>(null);
   const [entry, setEntry] = useState<EntryMeta | null>(null);
@@ -45,9 +47,13 @@ export default function PlayerScreen() {
   const [immersive, setImmersive] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [chromeNonce, setChromeNonce] = useState(0);
+  const [seekFlash, setSeekFlash] = useState<'back' | 'forward' | null>(null);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdActive = useRef(false);
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTapTimeRef = useRef(0);
+  const seekFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resumeRef = useRef(0);
   const seekedRef = useRef(false);
@@ -254,16 +260,49 @@ export default function PlayerScreen() {
     }
   }, [player]);
 
-  // One responder chain for both gestures: quick tap toggles chrome, hold = 2x
-  const onVideoGrant = useCallback(() => {
-    startHold();
-  }, [startHold]);
+  // One responder chain for all gestures:
+  //  hold = 2x;  double-tap left/right = -/+10s;  single tap = toggle chrome
+  const onVideoRelease = useCallback(
+    (e: GestureResponderEvent) => {
+      const wasHold = holdActive.current;
+      endHold();
+      if (wasHold) return;
+      const now = Date.now();
+      if (now - lastTapTimeRef.current < 300) {
+        // Double tap: seek by side of screen
+        if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+        singleTapTimer.current = null;
+        lastTapTimeRef.current = 0;
+        const forward = e.nativeEvent.locationX >= width / 2;
+        const dur = lastDurRef.current;
+        let next = lastPosRef.current + (forward ? 10 : -10);
+        if (next < 0) next = 0;
+        if (dur > 0 && next > dur) next = dur;
+        player.currentTime = next;
+        lastPosRef.current = next;
+        setPositionSec(next);
+        setSeekFlash(forward ? 'forward' : 'back');
+        if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
+        seekFlashTimer.current = setTimeout(() => setSeekFlash(null), 500);
+        bumpChrome();
+      } else {
+        lastTapTimeRef.current = now;
+        singleTapTimer.current = setTimeout(() => {
+          singleTapTimer.current = null;
+          lastTapTimeRef.current = 0;
+          toggleChrome();
+        }, 300);
+      }
+    },
+    [bumpChrome, endHold, player, toggleChrome, width],
+  );
 
-  const onVideoRelease = useCallback(() => {
-    const wasHold = holdActive.current;
-    endHold();
-    if (!wasHold) toggleChrome();
-  }, [endHold, toggleChrome]);
+  useEffect(() => {
+    return () => {
+      if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+      if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
+    };
+  }, []);
 
   const enterImmersive = useCallback(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
@@ -289,8 +328,8 @@ export default function PlayerScreen() {
   const subtitleLabel = player.subtitleTrack && player.subtitleTrack.id !== 'off' ? 'CC ON' : 'CC';
   const audioLabel = player.audioTrack
     ? ((val) => (val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio'))(
-        player.audioTrack.language || player.audioTrack.label,
-      )
+      player.audioTrack.language || player.audioTrack.label,
+    )
     : 'Audio';
 
   return (
@@ -304,17 +343,41 @@ export default function PlayerScreen() {
         fullscreenOptions={{ enable: false }}
       />
 
-      {/* Single tap toggles chrome; hold plays at 2x until release */}
+      {/* Hold = 2x; double-tap sides = ±10s; single tap toggles chrome */}
       {media && !error ? (
         <View
           style={StyleSheet.absoluteFill}
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
-          onResponderGrant={onVideoGrant}
+          onResponderGrant={startHold}
           onResponderRelease={onVideoRelease}
           onResponderTerminate={endHold}
           onResponderTerminationRequest={() => true}
         />
+      ) : null}
+
+      {seekFlash ? (
+        <View style={[styles.seekFlashBox, seekFlash === 'back' ? styles.seekFlashLeft : styles.seekFlashRight]} pointerEvents="none">
+          <Ionicons
+            name={seekFlash === 'forward' ? 'play-forward' : 'play-back'}
+            size={44}
+            color={colors.text}
+            style={styles.seekFlashGlyph}
+          />
+          <Text style={styles.seekFlashText}>10s</Text>
+        </View>
+      ) : null}
+
+      {controlsVisible && media && !error ? (
+        <Pressable
+          style={styles.centerPlay}
+          onPress={() => {
+            bumpChrome();
+            togglePlay();
+          }}
+          hitSlop={8}>
+          <Ionicons name={playing ? 'pause' : 'play'} size={34} color={colors.text} />
+        </Pressable>
       ) : null}
 
       {controlsVisible && !immersive ? (
@@ -381,8 +444,9 @@ export default function PlayerScreen() {
                 bumpChrome();
                 togglePlay();
               }}
-              hitSlop={8}>
-              <Text style={styles.controlIcon}>{playing ? '❚❚' : '▶'}</Text>
+              hitSlop={8}
+              style={styles.barIconButton}>
+              <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.text} />
             </Pressable>
             <Text style={styles.timeText}>
               {clock(positionSec)} / {clock(durationSec)}
@@ -412,8 +476,9 @@ export default function PlayerScreen() {
                   if (immersive) exitImmersive();
                   else enterImmersive();
                 }}
-                hitSlop={8}>
-                <Text style={styles.controlIcon}>⛶</Text>
+                hitSlop={8}
+                style={styles.barIconButton}>
+                <Ionicons name={immersive ? 'contract' : 'expand'} size={22} color={colors.text} />
               </Pressable>
             </View>
           </View>
@@ -532,11 +597,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   controlChip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   controlChipText: {
     color: colors.text,
@@ -586,6 +652,59 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: font.title,
     fontWeight: '800',
+  },
+  centerPlay: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -40,
+    alignSelf: 'center',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerPlayText: {
+    color: colors.text,
+    fontSize: 30,
+    fontWeight: '800',
+  },
+  barIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seekFlashBox: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  seekFlashLeft: {
+    left: 60,
+  },
+  seekFlashRight: {
+    right: 60,
+  },
+  seekFlashGlyph: {
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  seekFlashText: {
+    color: colors.text,
+    fontSize: font.body,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   timeText: {
     color: colors.textSecondary,
