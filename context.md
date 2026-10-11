@@ -29,6 +29,9 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - **No `ios/`/`android/` hand-editing** — generated (CNG); native config goes in `app.json`.
 - Poster matching is **strict** (exact/containment ≥5 chars, year ±1) — deliberately never guesses; unmatched titles get local frame fallback and are retried only when `metadata_attempted` is unset.
 - All entry deletes go through `deleteEntryDeep()` (children-first) because `PRAGMA foreign_keys = ON` — raw deletes crash with FK errors.
+- **YouTube is a separate subsystem, not part of the local library** (`src/features/youtube/`). New tables `youtube_playlist`/`youtube_video` (migration V4) — do NOT fold YouTube into `library_entry`/`media_item`/`scan_root`: those assume SAF document URIs, filesystem dedupe, and "change root = wipe everything" (`setRoot`), none of which apply to remote playlists. Resume progress (`position_ms`/`completed`/`last_played_at`) lives on the `youtube_video` row rather than a mirror of `playback_progress` (keyed by `media_item_id`, meaningless for remote videos).
+- **`react-native-youtube-iframe` is pinned to 2.3.0** — 2.4.0/2.4.1 are broken on Android (play/pause commands over `postMessage` never reach the player; upstream issues #376/#378, fix PR #380 unmerged). 2.3.0 works natively and re-exports the modern `react-native-webview`, so pinning beats carrying a patch-package diff. The "outdated JSX transform" Metro warning comes from its prebuilt `dist/` — harmless, ignore it.
+- **YouTube playback is a second player screen** (`youtube-player.tsx`), not a reuse of `player.tsx` — `expo-video` plays local `document_uri`s only. Chrome is deliberately minimal (top bar + up-next/error overlays); play/pause/seek/quality/captions are YouTube's own in-iframe controls. One WebView remount per episode (`key={videoId}`) — the iframe HTML bakes the video id in, so remounting is the reliable switch+resume path. Playlist metadata comes from the free YouTube Data API v3 (key in `.env`; `playlistItems.list` = 1 quota unit/page of 50, durations need a second `videos.list?part=contentDetails` pass; deleted/private items are filtered by their placeholder titles).
 
 ## Known environment quirks
 
@@ -95,13 +98,14 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 ## Conventions
 
 - Settings screen pattern: `Section` (red uppercase eyebrow + card) + shared `Row` with optional `divider` prop; sub-options open via the local `InfoModal` shell (Customization, Index, Artwork). Action rows are `SettingRow`, toggle rows `ToggleRow` (RN Switch, accent track).
-- Home-section toggles live in `src/lib/prefs.ts` (KV in `app_setting` table: `show_recently_added`, `show_continue_watching`, `show_youtube_shows` [reserved/no-op], `show_favorites`; defaults ON). Home (`index.tsx`) re-reads prefs on each focus; section order: Continue watching → Recently Added → My List → Movies → Web Series.
+- Home-section toggles live in `src/lib/prefs.ts` (KV in `app_setting` table: `show_recently_added`, `show_continue_watching`, `show_youtube_shows`, `show_favorites`; defaults ON). Home (`index.tsx`) re-reads prefs on each focus; section order: Continue watching → Recently Added → My List → Movies → Web Series → YouTube Shows.
 - Update/share: `src/lib/update.ts` — GitHub-releases API check (public, no backend), `Share.share` with the releases link.
 - Scanner: deleted files are purged on rescan (deep-delete entries + progress + media row); same-scan moves recovered by name+size, cross-scan moves count as delete+re-add (progress lost).
 - Player gestures all live in the single responder chain in `src/app/player.tsx` — read the architecture note above before touching it.
 - Tabs use **JS `Tabs`** (not `NativeTabs`) — Android Material native tabs ignore icon-only/height styling; bar is `height: 56 + insets.bottom`, absolute, glass via `expo-blur` (real Android backdrop blur needs `blurTarget` from `src/lib/blur.ts`); the Android nav-button strip below stays solid, not glass. Tab screen headers are sticky views above the ScrollView (content scrolls beneath), not part of scroll content.
 - Search: `SectionList` grouped Movies/Shows/Episodes; episodes show `S{n} E{n} · Show` and tap-to-play. `searchLibrary` UNION arms must emit identical rows per entity (see quirks).
-- Detail screens (movie/series): full-width gradient hero (`expo-linear-gradient`), floating back button, poster preferred over frame for series; parallax via Animated scrollY (`useState(() => new Animated.Value(0))`).
+- Detail screens (movie/series): full-width gradient hero (`expo-linear-gradient`), floating back button, poster preferred over frame for series; parallax via Animated scrollY (`useState(() => new Animated.Value(0))`). YouTube playlist detail mirrors this pattern with remote `i.ytimg.com` thumbnails (passed as `posterUrl`; `mediaId` stays null so the local thumbnail pipeline is skipped).
+- YouTube management is a dedicated pushed screen `src/app/youtube/index.tsx` (reached from Settings → YouTube): key status, add-playlist URL field, playlist list with per-row delete. Adds go through `fetchPlaylistWithItems` → `savePlaylist` (one transaction; existing per-episode progress survives a re-sync, videos YouTube removed are dropped). Playlist detail is `youtube/[id].tsx` — so `/youtube` and `/youtube/[id]` share the directory.
 
 ## Where things live
 
@@ -113,12 +117,13 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - Thumbnails + duration probe (player-based): `src/features/library/thumbnails.ts`
 - Android blur-target registry (tab-bar glass): `src/lib/blur.ts`
 - Poster display chain: `src/components/thumb.tsx`
+- YouTube: `src/features/youtube/{parse,api,store}.ts` (+ tests) · detail `src/app/youtube/[id].tsx` · player `src/app/youtube-player.tsx`
 - Theme tokens: `src/theme/colors.ts`
 
 ## Verification checklist before any "done"
 
 1. `npx tsc --noEmit`
 2. `npx expo lint`
-3. `npm test` (metadata tests, 24 passing)
+3. `npm test` (46 passing: metadata, classification, youtube, schema)
 4. If native deps changed: gradle rebuild + tell user to reinstall
 5. Ask for commit approval — never auto-commit

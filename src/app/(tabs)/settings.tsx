@@ -414,6 +414,15 @@ export default function SettingsScreen() {
         />
       </Section>
 
+      <Section title="YouTube">
+        <SettingRow
+          icon="logo-youtube"
+          label="YouTube playlists"
+          hint="Add & manage playlists"
+          onPress={() => router.push('/youtube')}
+        />
+      </Section>
+
       <Section title="Maintenance">
         <SettingRow
           icon="trash-outline"

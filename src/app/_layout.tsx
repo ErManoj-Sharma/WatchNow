@@ -30,6 +30,7 @@ export default function RootLayout() {
         }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="player" options={{ animation: 'fade' }} />
+        <Stack.Screen name="youtube-player" options={{ animation: 'fade' }} />
       </Stack>
     </>
   );

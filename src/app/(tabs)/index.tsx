@@ -28,6 +28,7 @@ import {
 import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { pickMovieFolder } from '@/features/scanner/roots';
 import { startScan, useScanState } from '@/features/scanner/scan-store';
+import { listPlaylists, type YoutubePlaylist } from '@/features/youtube/store';
 import { setBlurTarget } from '@/lib/blur';
 import { getHomePrefs, type HomePrefs } from '@/lib/prefs';
 import { colors, font, radius, spacing } from '@/theme/colors';
@@ -38,6 +39,7 @@ export default function HomeScreen() {
   const [root, setRootState] = useState<ScanRoot | null | undefined>(undefined);
   const [data, setData] = useState<HomeData | null>(null);
   const [prefs, setPrefs] = useState<HomePrefs | null>(null);
+  const [ytPlaylists, setYtPlaylists] = useState<YoutubePlaylist[]>([]);
   const scan = useScanState();
   const prevStatus = useRef(scan.status);
   const rootRef = useRef<View>(null);
@@ -47,6 +49,7 @@ export default function HomeScreen() {
     setRootState(r);
     setPrefs(await getHomePrefs());
     if (r) setData(await getHomeData());
+    listPlaylists().then(setYtPlaylists).catch(() => undefined);
   }, []);
 
   useFocusEffect(
@@ -148,6 +151,14 @@ export default function HomeScreen() {
           ? { pathname: '/movie/[id]', params: { id: String(f.id) } }
           : { pathname: '/series/[id]', params: { id: String(f.id) } },
     })) ?? [];
+  const youtubeItems: CardItem[] = ytPlaylists.map((p) => ({
+    id: p.id,
+    kind: 'series' as const,
+    title: p.title,
+    subtitle: `${p.videoCount} ${p.videoCount === 1 ? 'video' : 'videos'}`,
+    posterUrl: p.thumbnailUrl,
+    href: { pathname: '/youtube/[id]', params: { id: String(p.id) } },
+  }));
 
   const featuredMovie = data?.movies.find((m) => m.thumbnailPath || m.posterUrl) ?? data?.movies[0];
   const featuredSeries =
@@ -223,6 +234,9 @@ export default function HomeScreen() {
       {prefs?.favorites === false ? null : <SectionRow title="My Favorites" items={favoriteItems} />}
       <SectionRow title="Movies" items={movieItems} />
       <SectionRow title="Web Series" items={seriesItems} />
+      {prefs?.youtubeShows === false ? null : (
+        <SectionRow title="YouTube Shows" items={youtubeItems} />
+      )}
     </ScrollView>
     </BlurTargetView>
   );

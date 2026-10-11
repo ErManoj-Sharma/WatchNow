@@ -2,7 +2,7 @@
 
 ## What it is
 
-A Netflix-style **offline local-media player for Android**. It scans the phone's storage (via the Storage Access Framework) for video files, classifies them as movies or TV episodes, stores them in SQLite, and plays them with resume-progress, online posters, and gesture-rich playback. No streaming, no accounts — local files only. Full requirements: `srs.md`.
+A Netflix-style **offline local-media player for Android**. It scans the phone's storage (via the Storage Access Framework) for video files, classifies them as movies or TV episodes, stores them in SQLite, and plays them with resume-progress, online posters, and gesture-rich playback. Also plays **YouTube playlists** added by URL (streamed via an in-app WebView player). No accounts — local files plus public YouTube playlists. Full requirements: `srs.md`.
 
 ## Stack
 
@@ -12,7 +12,7 @@ A Netflix-style **offline local-media player for Android**. It scans the phone's
 | Language | TypeScript (strict), `@/*` → `./src/*` |
 | Routing | **Expo Router** (file-based, `src/app/`), typed routes, React Compiler on |
 | Storage | `expo-sqlite` (library DB, `PRAGMA foreign_keys = ON`) + `expo-file-system` SAF access |
-| Playback | `expo-video` (Media3/ExoPlayer on Android) + `expo-video-thumbnails` |
+| Playback | `expo-video` (Media3/ExoPlayer on Android) + `expo-video-thumbnails`; YouTube via `react-native-youtube-iframe@2.3.0` + `react-native-webview` |
 | Native UX | `expo-screen-orientation`, `expo-navigation-bar`, `expo-brightness`, `react-native-volume-manager`, `@expo/vector-icons` (Ionicons) |
 | UI | `expo-image`, theme tokens in `src/theme/colors.ts` |
 | Dev tooling | `tsx` (tests via node test runner), `eslint-config-expo`, `npx expo lint`, `npx tsc --noEmit` |
@@ -32,19 +32,22 @@ A Netflix-style **offline local-media player for Android**. It scans the phone's
   - Time display tap toggles remaining countdown (`- 2H 34M 00S`)
   - Progress save on 10s interval / pause / back; resume on reopen; codec-error friendly messages; play-next for episodes
 - **Online posters**: background fetch of TMDB/TVmaze/OMDb posters with strict title/year matching, local frame fallback, Settings UI for API keys + "refresh missing".
+- **YouTube playlists** (`src/features/youtube/`, screens `src/app/youtube/[id].tsx` + `youtube-player.tsx`): paste a playlist URL in Settings → YouTube; name/thumbnail/episodes (+ thumbs, durations) fetched via the YouTube Data API v3 (key from `EXPO_PUBLIC_YOUTUBE_API_KEY` in `.env`) and stored in dedicated `youtube_playlist`/`youtube_video` tables (migration V4 — deliberately separate from the local-library tables). Home "YouTube Shows" row (gated by the `show_youtube_shows` pref); playback via `react-native-youtube-iframe@2.3.0` in a WebView with resume, watched state, and auto-advance.
 - **Thumb component**: poster → local thumbnail → letter fallback chain used by all lists.
 
 ## Layout
 
 ```
 src/
-  app/            # Expo Router screens (player.tsx = playback screen)
+  app/            # Expo Router screens (player.tsx = local playback, youtube-player.tsx = YouTube playback)
   app/(tabs)/     # home, movies, series, search, settings
+  app/youtube/    # index.tsx = manage playlists, [id].tsx = playlist detail
   components/     # thumb, section-row, continue-card, button, …
-  db/             # schema.ts (migrations), repositories.ts (all queries)
+  db/             # schema.ts (migrations), repositories.ts (local queries)
   features/
     scanner/      # SAF scan + classification engine
     metadata/     # match.ts, providers.ts, fetcher.ts (+ tests)
+    youtube/      # parse.ts, api.ts, store.ts (+ tests)
   theme/          # colors.ts (colors, spacing, font, radius)
   utils/          # format.ts (bytes, duration, timestamps)
 ```
@@ -55,7 +58,7 @@ src/
 npx expo start              # Metro dev server (JS reloads over the air)
 npx expo lint               # lint
 npx tsc --noEmit            # typecheck
-npm test                    # tsx --test src/**/*.test.ts (metadata tests)
+npm test                    # tsx --test src/**/*.test.ts (46 tests: metadata, classification, youtube, schema)
 npx expo install <pkg>      # always use this to add deps (SDK-version resolution)
 cd android && ./gradlew assembleDebug   # rebuild debug APK (needed after adding native modules)
 ```
@@ -66,4 +69,4 @@ APK output: `android/app/build/outputs/apk/debug/app-debug.apk` (package `com.er
 
 ## Env
 
-`.env` (gitignored): `EXPO_PUBLIC_OMDB_API_KEY` — Expo only exposes `EXPO_PUBLIC_*` vars; run `npx expo start -c` after changes (inlined at bundle time).
+`.env` (gitignored): `EXPO_PUBLIC_OMDB_API_KEY`, `EXPO_PUBLIC_YOUTUBE_API_KEY` — Expo only exposes `EXPO_PUBLIC_*` vars; run `npx expo start -c` after changes (inlined at bundle time). The YouTube key needs the **YouTube Data API v3** enabled in a Google Cloud project (API-key credentials, no OAuth).

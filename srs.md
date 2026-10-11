@@ -52,7 +52,7 @@ ls -la /usr/lib/android-sdk
 ```
 
 Inspect existing project files if the current directory already contains a project.
-
+ 
 If there is no existing project, create it in:
 
 ```text

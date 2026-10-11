@@ -130,8 +130,38 @@ const V3 = `
 UPDATE media_item SET thumbnail_path = NULL;
 `;
 
+const V4 = `
+CREATE TABLE youtube_playlist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  playlist_id TEXT NOT NULL UNIQUE,
+  url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  channel_title TEXT,
+  thumbnail_url TEXT,
+  video_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  synced_at INTEGER
+);
+
+CREATE TABLE youtube_video (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  playlist_id INTEGER NOT NULL REFERENCES youtube_playlist(id) ON DELETE CASCADE,
+  video_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  thumbnail_url TEXT,
+  duration_seconds INTEGER,
+  position INTEGER NOT NULL,
+  position_ms INTEGER,
+  completed INTEGER NOT NULL DEFAULT 0,
+  last_played_at INTEGER,
+  UNIQUE (playlist_id, video_id)
+);
+CREATE INDEX idx_youtube_video_playlist ON youtube_video(playlist_id, position);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, sql: V1 },
   { version: 2, sql: V2 },
   { version: 3, sql: V3 },
+  { version: 4, sql: V4 },
 ];
