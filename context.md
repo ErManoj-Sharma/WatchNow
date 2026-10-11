@@ -66,20 +66,26 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 | `969574a` | tap time → remaining countdown |
 | `b0615d5` | swipe brightness/volume + project.md/context.md docs |
 | `ac51703` | settings UI redesign (eyebrow sections, stat strip, status dot) |
+| `6850c4b` | settings row-pattern redesign + modals, GitHub-release update check, share app, animated scan indicator |
+| `be0cfaf` | rescan purges deleted files (no more "missing" ghost rows; Missing stat removed) |
 
 ## Backlog (`todo.md`)
 
-- App update feature (EAS Update / "check for updates" in Settings)
-- Share app feature (system share sheet)
+- [x] App update feature — GitHub-releases check in Settings About section (`src/lib/update.ts`); update row opens the release page
+- [x] Share app feature — RN Share sheet with the releases link
 
 ## Conventions
 
-- Settings screen pattern: `Section` (red uppercase eyebrow + card) + shared `Row` with optional `divider` prop; Index stats use the `Stat` counter strip.
+- Settings screen pattern: `Section` (red uppercase eyebrow + card) + shared `Row` with optional `divider` prop; sub-options open via the local `InfoModal` shell (Customization, Index, Artwork). Action rows are `SettingRow`, toggle rows `ToggleRow` (RN Switch, accent track).
+- Home-section toggles live in `src/lib/prefs.ts` (KV in `app_setting` table: `show_recently_added`, `show_continue_watching`, `show_youtube_shows`; defaults ON). Home (`index.tsx`) re-reads prefs on each focus. YouTube toggle is persisted but no-op until a YouTube section ships.
+- Update/share: `src/lib/update.ts` — GitHub-releases API check (public, no backend), `Share.share` with the releases link.
+- Scanner: deleted files are purged on rescan (deep-delete entries + progress + media row); same-scan moves recovered by name+size, cross-scan moves count as delete+re-add (progress lost).
 - Player gestures all live in the single responder chain in `src/app/player.tsx` — read the architecture note above before touching it.
 
 ## Where things live
 
 - Player (all gestures/chrome): `src/app/player.tsx`
+- Home-screen prefs: `src/lib/prefs.ts` · update check + share: `src/lib/update.ts`
 - DB schema + migrations: `src/db/schema.ts` · all queries: `src/db/repositories.ts`
 - Poster pipeline: `src/features/metadata/{match,providers,fetcher}.ts` (+ tests)
 - Scan + classify: `src/features/scanner/`

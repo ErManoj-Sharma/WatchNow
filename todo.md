@@ -1,4 +1,4 @@
 # WatchNow — TODO
 
-- [ ] **App update feature** — ship over-the-air updates via EAS Update (`expo-updates` + `eas update`), with a "check for updates" action in Settings.
-- [ ] **Share app feature** — share the app with others (e.g. share a download/play-store link or APK note via the system share sheet).
+- [x] **App update feature** — GitHub-release version check in Settings → About (`src/lib/update.ts`); "Update app" row opens the release page to download the APK.
+- [x] **Share app feature** — "Share app" row in Settings → About opens the system share sheet with the download link.
