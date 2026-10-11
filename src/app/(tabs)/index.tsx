@@ -216,9 +216,9 @@ export default function HomeScreen() {
 
       <ContinueRow items={prefs?.continueWatching === false ? [] : (data?.continueWatching ?? [])} />
       {prefs?.recentlyAdded === false ? null : <SectionRow title="Recently Added" items={recentItems} />}
+      {prefs?.favorites === false ? null : <SectionRow title="My Favorites" items={favoriteItems} />}
       <SectionRow title="Movies" items={movieItems} />
       <SectionRow title="Web Series" items={seriesItems} />
-      <SectionRow title="My List" items={favoriteItems} />
     </ScrollView>
   );
 }

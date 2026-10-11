@@ -34,7 +34,7 @@ import {
 import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { folderStillAccessible, pickMovieFolder } from '@/features/scanner/roots';
 import { startScan } from '@/features/scanner/scan-store';
-import { getHomePrefs, setHomePref, type HomePrefs, type HomePrefKey } from '@/lib/prefs';
+import { getHomePrefs, setHomePref, type HomePrefKey, type HomePrefs } from '@/lib/prefs';
 import {
   checkForLatestRelease,
   compareSemver,
@@ -212,7 +212,12 @@ export default function SettingsScreen() {
   const [artworkOpen, setArtworkOpen] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
-  const [prefs, setPrefs] = useState<HomePrefs>({ recentlyAdded: true, continueWatching: true, youtubeShows: true });
+  const [prefs, setPrefs] = useState<HomePrefs>({
+    recentlyAdded: true,
+    continueWatching: true,
+    youtubeShows: true,
+    favorites: true,
+  });
 
   const installed = getInstalledVersion();
   const hasUpdate = Boolean(latest && compareSemver(latest.version, installed) > 0);
@@ -492,6 +497,14 @@ export default function SettingsScreen() {
             hint="Row of half-watched videos"
             value={prefs.continueWatching}
             onValueChange={(v) => onTogglePref('continueWatching', v)}
+            divider
+          />
+          <ToggleRow
+            icon="heart-outline"
+            label="Show My Favorites"
+            hint="Favorites row above Movies"
+            value={prefs.favorites}
+            onValueChange={(v) => onTogglePref('favorites', v)}
             divider
           />
           <ToggleRow
