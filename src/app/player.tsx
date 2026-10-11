@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEventListener } from 'expo';
 import * as Brightness from 'expo-brightness';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as NavigationBar from 'expo-navigation-bar';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -429,10 +430,9 @@ export default function PlayerScreen() {
     };
   }, []);
 
-  const displayTitle =
-    entry?.kind === 'episode' && entry.seriesTitle
-      ? `${entry.seriesTitle} · S${entry.seasonNumber}E${entry.episodeNumber}`
-      : (media?.fileName ?? '');
+  const isEpisode = entry?.kind === 'episode' && !!entry.seriesTitle;
+  const titleMain = isEpisode ? (entry?.seriesTitle ?? '') : (media?.fileName ?? '');
+  const titleSub = isEpisode ? `Season ${entry?.seasonNumber} · Episode ${entry?.episodeNumber}` : null;
 
   const subtitleLabel = player.subtitleTrack && player.subtitleTrack.id !== 'off' ? 'CC ON' : 'CC';
   const audioLabel = player.audioTrack
@@ -530,13 +530,39 @@ export default function PlayerScreen() {
       ) : null}
 
       {controlsVisible ? (
-        <View style={[styles.topBar, { paddingTop: insets.top + spacing.xs }]} pointerEvents="box-none">
-          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </Pressable>
-          <Text style={styles.title} numberOfLines={1}>
-            {displayTitle}
-          </Text>
+        <View style={styles.topWrap} pointerEvents="box-none">
+          <LinearGradient
+            colors={['rgba(0,0,0,0.8)', 'transparent']}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <View
+            style={[
+              styles.topBar,
+              {
+                paddingTop: insets.top + spacing.xs,
+                paddingLeft: Math.max(spacing.md, insets.left),
+                paddingRight: Math.max(spacing.md, insets.right),
+              },
+            ]}
+            pointerEvents="box-none">
+            <Pressable
+              onPress={() => router.back()}
+              hitSlop={12}
+              style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
+            </Pressable>
+            <View style={styles.titleBlock}>
+              <Text style={styles.title} numberOfLines={1}>
+                {titleMain}
+              </Text>
+              {titleSub ? (
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {titleSub}
+                </Text>
+              ) : null}
+            </View>
+          </View>
         </View>
       ) : null}
 
@@ -719,33 +745,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topBar: {
+  topWrap: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
+  },
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+    paddingBottom: spacing.lg, // extra room so the fade blends out smoothly
   },
-  back: {
-    paddingVertical: spacing.xs,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  backText: {
-    color: colors.text,
-    fontSize: font.body,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  titleBlock: {
+    flex: 1,
   },
   title: {
     color: colors.text,
     fontSize: font.body,
-    fontWeight: '600',
-    flex: 1,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: font.caption,
+    marginTop: 1,
     textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
