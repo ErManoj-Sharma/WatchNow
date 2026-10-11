@@ -1,9 +1,12 @@
 import { useEventListener } from 'expo';
+import * as NavigationBar from 'expo-navigation-bar';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GestureResponderEvent } from 'react-native';
-import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
@@ -30,8 +33,6 @@ export default function PlayerScreen() {
   const params = useLocalSearchParams<{ mediaId?: string; entryId?: string }>();
   const mediaId = Number(params.mediaId);
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const isPortrait = height >= width;
   const [media, setMedia] = useState<MediaInfo | null>(null);
   const [entry, setEntry] = useState<EntryMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +41,13 @@ export default function PlayerScreen() {
   const [durationSec, setDurationSec] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
+  const [showSpeedBadge, setShowSpeedBadge] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [chromeNonce, setChromeNonce] = useState(0);
+
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdActive = useRef(false);
 
   const resumeRef = useRef(0);
   const seekedRef = useRef(false);
@@ -49,7 +57,6 @@ export default function PlayerScreen() {
   const lastPosRef = useRef(0);
   const lastDurRef = useRef(0);
 
-  const videoRef = useRef<VideoView>(null);
   const barWidthRef = useRef(1);
   const dragRef = useRef<number | null>(null);
 
@@ -152,6 +159,37 @@ export default function PlayerScreen() {
     }, [saveNow]),
   );
 
+  // Auto-hide chrome a few seconds after the last interaction while playing.
+  useEffect(() => {
+    if (!controlsVisible || !playing || audioPickerOpen) return;
+    const t = setTimeout(() => {
+      setControlsVisible(false);
+      setAudioPickerOpen(false);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [chromeNonce, controlsVisible, playing, audioPickerOpen]);
+
+  // Hide the Android system nav bar during playback; restore on exit.
+  useEffect(() => {
+    return () => {
+      NavigationBar.setVisibilityAsync('visible').catch(() => undefined);
+    };
+  }, []);
+
+  useEffect(() => {
+    NavigationBar.setVisibilityAsync(controlsVisible ? 'visible' : 'hidden').catch(() => undefined);
+  }, [controlsVisible]);
+
+  const bumpChrome = useCallback(() => {
+    setChromeNonce((n) => n + 1);
+    setControlsVisible(true);
+  }, []);
+
+  const toggleChrome = useCallback(() => {
+    setChromeNonce((n) => n + 1);
+    setControlsVisible((v) => !v);
+  }, []);
+
   const togglePlay = useCallback(() => {
     if (player.playing) {
       player.pause();
@@ -177,20 +215,13 @@ export default function PlayerScreen() {
     player.subtitleTrack = idx >= 0 && idx + 1 < tracks.length ? tracks[idx + 1] : null;
   }, [player]);
 
-  const cycleAudio = useCallback(() => {
-    const tracks = player.availableAudioTracks;
-    if (tracks.length === 0) return;
-    const currentId = player.audioTrack?.id;
-    const idx = tracks.findIndex((t) => t.id === currentId);
-    player.audioTrack = tracks[(idx + 1) % tracks.length];
-  }, [player]);
-
   const seekRatio = (locationX: number) => Math.min(1, Math.max(0, locationX / Math.max(1, barWidthRef.current)));
 
   const onSeekGrant = useCallback((e: GestureResponderEvent) => {
+    bumpChrome();
     dragRef.current = seekRatio(e.nativeEvent.locationX) * lastDurRef.current;
     setPositionSec(dragRef.current);
-  }, []);
+  }, [bumpChrome]);
 
   const onSeekMove = useCallback((e: GestureResponderEvent) => {
     dragRef.current = seekRatio(e.nativeEvent.locationX) * lastDurRef.current;
@@ -205,35 +236,131 @@ export default function PlayerScreen() {
     dragRef.current = null;
   }, [player]);
 
+  const startHold = useCallback(() => {
+    holdTimer.current = setTimeout(() => {
+      holdActive.current = true;
+      player.playbackRate = 2;
+      setShowSpeedBadge(true);
+    }, 250);
+  }, [player]);
+
+  const endHold = useCallback(() => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    if (holdActive.current) {
+      player.playbackRate = 1;
+      setShowSpeedBadge(false);
+      holdActive.current = false;
+    }
+  }, [player]);
+
+  // One responder chain for both gestures: quick tap toggles chrome, hold = 2x
+  const onVideoGrant = useCallback(() => {
+    startHold();
+  }, [startHold]);
+
+  const onVideoRelease = useCallback(() => {
+    const wasHold = holdActive.current;
+    endHold();
+    if (!wasHold) toggleChrome();
+  }, [endHold, toggleChrome]);
+
+  const enterImmersive = useCallback(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
+    setImmersive(true);
+  }, []);
+
+  const exitImmersive = useCallback(() => {
+    setImmersive(false);
+    ScreenOrientation.unlockAsync().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      ScreenOrientation.unlockAsync().catch(() => undefined);
+    };
+  }, []);
+
   const displayTitle =
     entry?.kind === 'episode' && entry.seriesTitle
       ? `${entry.seriesTitle} · S${entry.seasonNumber}E${entry.episodeNumber}`
       : (media?.fileName ?? '');
 
   const subtitleLabel = player.subtitleTrack && player.subtitleTrack.id !== 'off' ? 'CC ON' : 'CC';
+  const audioLabel = player.audioTrack
+    ? ((val) => (val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio'))(
+        player.audioTrack.language || player.audioTrack.label,
+      )
+    : 'Audio';
 
   return (
     <View style={styles.container}>
+      <StatusBar hidden={!controlsVisible} style="light" />
       <VideoView
-        ref={videoRef}
         player={player}
         style={StyleSheet.absoluteFill}
-        nativeControls={!isPortrait}
+        nativeControls={false}
         contentFit="contain"
-        fullscreenOptions={{ enable: true, orientation: 'landscape' }}
-        onFullscreenEnter={() => setAudioPickerOpen(false)}
+        fullscreenOptions={{ enable: false }}
       />
 
-      <View style={[styles.topBar, { paddingTop: insets.top + spacing.xs }]} pointerEvents="box-none">
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </Pressable>
-        <Text style={styles.title} numberOfLines={1}>
-          {displayTitle}
-        </Text>
-      </View>
+      {/* Single tap toggles chrome; hold plays at 2x until release */}
+      {media && !error ? (
+        <View
+          style={StyleSheet.absoluteFill}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={onVideoGrant}
+          onResponderRelease={onVideoRelease}
+          onResponderTerminate={endHold}
+          onResponderTerminationRequest={() => true}
+        />
+      ) : null}
 
-      {isPortrait && media && !error ? (
+      {controlsVisible && !immersive ? (
+        <View style={[styles.topBar, { paddingTop: insets.top + spacing.xs }]} pointerEvents="box-none">
+          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </Pressable>
+          <Text style={styles.title} numberOfLines={1}>
+            {displayTitle}
+          </Text>
+        </View>
+      ) : null}
+
+      {showSpeedBadge ? (
+        <View style={styles.speedBadge} pointerEvents="none">
+          <Text style={styles.speedBadgeText}>2×</Text>
+        </View>
+      ) : null}
+
+      {audioPickerOpen ? (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => {
+            setAudioPickerOpen(false);
+            bumpChrome();
+          }}
+        />
+      ) : null}
+      {audioPickerOpen && media && !error ? (
+        <View style={[styles.audioPicker, { bottom: insets.bottom + 110 }]}>
+          <Text style={styles.audioPickerTitle}>Audio track</Text>
+          {player.availableAudioTracks.map((t, i) => (
+            <Pressable
+              key={t.id ?? i}
+              onPress={() => {
+                player.audioTrack = t;
+                setAudioPickerOpen(false);
+                bumpChrome();
+              }}
+              style={[styles.audioOption, player.audioTrack?.id === t.id && styles.audioOptionActive]}>
+              <Text style={styles.audioOptionText}>{t.label || t.language || `Track ${i + 1}`}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {controlsVisible && media && !error ? (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.sm }]}>
           <View
             style={styles.seekHit}
@@ -248,25 +375,43 @@ export default function PlayerScreen() {
             </View>
           </View>
           <View style={styles.controlsRow}>
-            <Pressable onPress={togglePlay} hitSlop={8}>
+            <Pressable
+              onPress={() => {
+                bumpChrome();
+                togglePlay();
+              }}
+              hitSlop={8}>
               <Text style={styles.controlIcon}>{playing ? '❚❚' : '▶'}</Text>
             </Pressable>
             <Text style={styles.timeText}>
               {clock(positionSec)} / {clock(durationSec)}
             </Text>
             <View style={styles.controlsRight}>
-              <Pressable onPress={cycleSubtitle} hitSlop={8} style={styles.controlChip}>
+              <Pressable
+                onPress={() => {
+                  bumpChrome();
+                  cycleSubtitle();
+                }}
+                hitSlop={8}
+                style={styles.controlChip}>
                 <Text style={styles.controlChipText}>{subtitleLabel}</Text>
               </Pressable>
-              <Pressable onPress={cycleAudio} hitSlop={8} style={styles.controlChip}>
-                <Text style={styles.controlChipText}>
-                  {player.audioTrack
-                    ? (val => val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio')(player.audioTrack.language || player.audioTrack.label)
-                    : 'Audio'}
-                </Text>
-
+              <Pressable
+                onPress={() => {
+                  bumpChrome();
+                  setAudioPickerOpen((o) => !o);
+                }}
+                hitSlop={8}
+                style={styles.controlChip}>
+                <Text style={styles.controlChipText}>{audioLabel}</Text>
               </Pressable>
-              <Pressable onPress={() => videoRef.current?.enterFullscreen()} hitSlop={8}>
+              <Pressable
+                onPress={() => {
+                  bumpChrome();
+                  if (immersive) exitImmersive();
+                  else enterImmersive();
+                }}
+                hitSlop={8}>
                 <Text style={styles.controlIcon}>⛶</Text>
               </Pressable>
             </View>
@@ -274,45 +419,8 @@ export default function PlayerScreen() {
         </View>
       ) : null}
 
-      {/* Landscape: native controls lack an audio-track list, so float our own picker trigger */}
-      {!isPortrait && media && !error ? (
-        <>
-          {audioPickerOpen ? (
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setAudioPickerOpen(false)} />
-          ) : null}
-          <Pressable
-            style={[styles.audioFab, { bottom: insets.bottom + 110 }]}
-            onPress={() => setAudioPickerOpen((o) => !o)}
-            hitSlop={8}>
-            <Text style={styles.controlChipText}>
-              {player.audioTrack
-                ? ((val) => (val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio'))(
-                    player.audioTrack.language || player.audioTrack.label,
-                  )
-                : 'Audio'}
-            </Text>
-          </Pressable>
-          {audioPickerOpen ? (
-            <View style={[styles.audioPicker, { bottom: insets.bottom + 150 }]}>
-              <Text style={styles.audioPickerTitle}>Audio track</Text>
-              {player.availableAudioTracks.map((t, i) => (
-                <Pressable
-                  key={t.id ?? i}
-                  onPress={() => {
-                    player.audioTrack = t;
-                    setAudioPickerOpen(false);
-                  }}
-                  style={[styles.audioOption, player.audioTrack?.id === t.id && styles.audioOptionActive]}>
-                  <Text style={styles.audioOptionText}>{t.label || t.language || `Track ${i + 1}`}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-        </>
-      ) : null}
-
       {showNext ? (
-        <View style={[styles.nextBar, { bottom: (isPortrait ? 96 : 0) + insets.bottom + spacing.xl }]}>
+        <View style={[styles.nextBar, { bottom: (controlsVisible ? 96 : 16) + insets.bottom + spacing.xl }]}>
           <Button
             label={showNext.label}
             onPress={() => {
@@ -356,8 +464,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    // Stop before the native controls' top-right cluster (landscape)
-    right: 112,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -435,16 +542,6 @@ const styles = StyleSheet.create({
     fontSize: font.caption,
     fontWeight: '700',
   },
-  audioFab: {
-    position: 'absolute',
-    right: spacing.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
   audioPicker: {
     position: 'absolute',
     right: spacing.md,
@@ -474,6 +571,20 @@ const styles = StyleSheet.create({
   audioOptionText: {
     color: colors.text,
     fontSize: font.body,
+  },
+  speedBadge: {
+    position: 'absolute',
+    top: '45%',
+    alignSelf: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  speedBadgeText: {
+    color: colors.text,
+    fontSize: font.title,
+    fontWeight: '800',
   },
   timeText: {
     color: colors.textSecondary,
