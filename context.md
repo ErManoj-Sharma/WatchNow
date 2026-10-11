@@ -39,7 +39,9 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - expo-video: use **`replaceAsync`** (sync `replace` warns/freezes on iOS); `SubtitleTrack`/`AudioTrack` identify tracks by **`id`** (not `identifier`); `playbackRate` property + `preservesPitch=true` for 2x (pinned explicitly).
 - **Thumbnails/duration: player pipeline only** (`src/features/library/thumbnails.ts`). `expo-video-thumbnails` (MediaMetadataRetriever) "succeeds" with **all-black frames** on the user's MKV/HEVC rips (verified on device) — never use it. `ensureThumbnail` = queued throwaway `createVideoPlayer`: wait readyToPlay → persist `duration_ms` → `generateThumbnailsAsync` at ~20% in (capped 45s, mid-file retry) → native image ref used directly as expo-image `source`. Refs can't be persisted → session-only, lazy per visible card, one decoder at a time. Migration v3 wiped old black JPEGs.
 - Metro **reload races expo-sqlite** ("shared object that was already released" on prepareAsync) — transient DB errors right after reload are expected; key DB writes retry once after 400ms. Verify thumbnail/DB behavior on a cold start, not after reload.
-- React Compiler (eslint `react-hooks/refs`) forbids reading refs during render — `useRef(PanResponder.create(...)).current` and passing refs into `useMemo` factories both fail lint. Use responder props + `useCallback`, refs only inside handlers.
+- **SQLite UNION arms must have identical column counts** and produce identical rows for the same entity — older SQLite tolerated mismatches, SDK 57's bundled one throws `SELECTs to the left and right of UNION do not have the same number of result columns`. The search query broke twice this way (missing `poster_url` columns; title-match vs file-match rows not deduping).
+- **expo-blur Android needs an explicit blur target**: `blurMethod="dimezisBlurViewSdk31Plus"` (the old `experimentalBlurMethod` prop is deprecated) plus a `blurTarget` ref — without it, Android silently falls back to a flat tint (no backdrop blur). Tab screens wrap their root in `BlurTargetView` and register via `src/lib/blur.ts` on focus; the tab-bar `BlurView` subscribes to that registry. Android's Material 3 native tabs have a fixed ~80dp height with no height prop — that's why the app uses JS tabs.
+- React Compiler (eslint `react-hooks/refs`) forbids reading refs during render — `useRef(PanResponder.create(...)).current`, `useRef(new Animated.Value(0)).current`, and passing refs into `useMemo` factories all fail lint. Use responder props + `useCallback`; for scroll-driven Animated values use `const [scrollY] = useState(() => new Animated.Value(0))`; refs only inside handlers.
 - Status bar overlap on Android: `contentInsetAdjustmentBehavior` is a no-op — screens pad with `useSafeAreaInsets().top`.
 
 ## User preferences observed
@@ -73,6 +75,17 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 | `989c7f5` | Customization section with SQLite-backed home-screen toggles |
 | `9d52cd1` | docs sync (context.md + todo.md) |
 | `e8adec6` | docs: add customization commits to context history |
+| `2e87d98` | player-based thumbnails + duration probe, migration v3 |
+| `635c5fc` | docs: thumbnail/sqlite-race lessons |
+| `a7da460` | Show My List toggle (favorites above Movies) |
+| `b4bf9cd` | docs: show_favorites |
+| `f4cb030` | "My Favorites" button rename (user edit) |
+| `af0ff46` | JS tab bar — icon-only, 56px, glassmorphism (expo-blur backdrop) |
+| `755d9b2` | sticky tab headers |
+| `ea3ff28` | search: UNION dedupe/column fix, S/E info, result count, tap episode → player |
+| `179e1dd` | sectioned search results (Movies/Shows/Episodes) |
+| `156c43d` | movie detail redesign (gradient hero, back button, progress sliver) |
+| `119785f` | series detail UI (poster hero, parallax, season pills) + Animated ref lint fix |
 
 ## Backlog (`todo.md`)
 
@@ -86,6 +99,9 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - Update/share: `src/lib/update.ts` — GitHub-releases API check (public, no backend), `Share.share` with the releases link.
 - Scanner: deleted files are purged on rescan (deep-delete entries + progress + media row); same-scan moves recovered by name+size, cross-scan moves count as delete+re-add (progress lost).
 - Player gestures all live in the single responder chain in `src/app/player.tsx` — read the architecture note above before touching it.
+- Tabs use **JS `Tabs`** (not `NativeTabs`) — Android Material native tabs ignore icon-only/height styling; bar is `height: 56 + insets.bottom`, absolute, glass via `expo-blur` (real Android backdrop blur needs `blurTarget` from `src/lib/blur.ts`); the Android nav-button strip below stays solid, not glass. Tab screen headers are sticky views above the ScrollView (content scrolls beneath), not part of scroll content.
+- Search: `SectionList` grouped Movies/Shows/Episodes; episodes show `S{n} E{n} · Show` and tap-to-play. `searchLibrary` UNION arms must emit identical rows per entity (see quirks).
+- Detail screens (movie/series): full-width gradient hero (`expo-linear-gradient`), floating back button, poster preferred over frame for series; parallax via Animated scrollY (`useState(() => new Animated.Value(0))`).
 
 ## Where things live
 
@@ -95,6 +111,7 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - Poster pipeline: `src/features/metadata/{match,providers,fetcher}.ts` (+ tests)
 - Scan + classify: `src/features/scanner/`
 - Thumbnails + duration probe (player-based): `src/features/library/thumbnails.ts`
+- Android blur-target registry (tab-bar glass): `src/lib/blur.ts`
 - Poster display chain: `src/components/thumb.tsx`
 - Theme tokens: `src/theme/colors.ts`
 
