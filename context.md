@@ -37,6 +37,8 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - 2-day-old releases (e.g. "Matchbox The Movie 2026") are often not indexed by any provider — correct behavior, not a bug.
 - Many downloaded rips use **EAC3/Dolby audio** the phone can't decode (`Decoder init failed [-49999]`). Device limitation; the player shows a friendly "try an AAC rip / re-encode" message. In-app transcoding was considered and rejected (ffmpeg-kit is EOL; a transcoder module + queue UI is a whole feature). Workaround shared with user: `ffmpeg -i in.mkv -c:v copy -c:a aac out.mkv`.
 - expo-video: use **`replaceAsync`** (sync `replace` warns/freezes on iOS); `SubtitleTrack`/`AudioTrack` identify tracks by **`id`** (not `identifier`); `playbackRate` property + `preservesPitch=true` for 2x (pinned explicitly).
+- **Thumbnails/duration: player pipeline only** (`src/features/library/thumbnails.ts`). `expo-video-thumbnails` (MediaMetadataRetriever) "succeeds" with **all-black frames** on the user's MKV/HEVC rips (verified on device) — never use it. `ensureThumbnail` = queued throwaway `createVideoPlayer`: wait readyToPlay → persist `duration_ms` → `generateThumbnailsAsync` at ~20% in (capped 45s, mid-file retry) → native image ref used directly as expo-image `source`. Refs can't be persisted → session-only, lazy per visible card, one decoder at a time. Migration v3 wiped old black JPEGs.
+- Metro **reload races expo-sqlite** ("shared object that was already released" on prepareAsync) — transient DB errors right after reload are expected; key DB writes retry once after 400ms. Verify thumbnail/DB behavior on a cold start, not after reload.
 - React Compiler (eslint `react-hooks/refs`) forbids reading refs during render — `useRef(PanResponder.create(...)).current` and passing refs into `useMemo` factories both fail lint. Use responder props + `useCallback`, refs only inside handlers.
 - Status bar overlap on Android: `contentInsetAdjustmentBehavior` is a no-op — screens pad with `useSafeAreaInsets().top`.
 
@@ -70,6 +72,7 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 | `be0cfaf` | rescan purges deleted files (no more "missing" ghost rows; Missing stat removed) |
 | `989c7f5` | Customization section with SQLite-backed home-screen toggles |
 | `9d52cd1` | docs sync (context.md + todo.md) |
+| `e8adec6` | docs: add customization commits to context history |
 
 ## Backlog (`todo.md`)
 
@@ -91,6 +94,7 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - DB schema + migrations: `src/db/schema.ts` · all queries: `src/db/repositories.ts`
 - Poster pipeline: `src/features/metadata/{match,providers,fetcher}.ts` (+ tests)
 - Scan + classify: `src/features/scanner/`
+- Thumbnails + duration probe (player-based): `src/features/library/thumbnails.ts`
 - Poster display chain: `src/components/thumb.tsx`
 - Theme tokens: `src/theme/colors.ts`
 
