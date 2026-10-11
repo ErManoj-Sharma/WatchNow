@@ -68,6 +68,8 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 | `ac51703` | settings UI redesign (eyebrow sections, stat strip, status dot) |
 | `6850c4b` | settings row-pattern redesign + modals, GitHub-release update check, share app, animated scan indicator |
 | `be0cfaf` | rescan purges deleted files (no more "missing" ghost rows; Missing stat removed) |
+| `989c7f5` | Customization section with SQLite-backed home-screen toggles |
+| `9d52cd1` | docs sync (context.md + todo.md) |
 
 ## Backlog (`todo.md`)
 
