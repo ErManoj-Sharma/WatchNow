@@ -30,6 +30,15 @@ function clock(seconds: number): string {
   return formatDuration(Math.round(seconds * 1000));
 }
 
+function remaining(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}h ${pad(m)}m ${pad(s)}s` : `${m}m ${pad(s)}s`;
+}
+
 export default function PlayerScreen() {
   const params = useLocalSearchParams<{ mediaId?: string; entryId?: string }>();
   const mediaId = Number(params.mediaId);
@@ -48,6 +57,7 @@ export default function PlayerScreen() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [chromeNonce, setChromeNonce] = useState(0);
   const [seekFlash, setSeekFlash] = useState<'back' | 'forward' | null>(null);
+  const [showRemaining, setShowRemaining] = useState(false);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdActive = useRef(false);
@@ -448,9 +458,18 @@ export default function PlayerScreen() {
               style={styles.barIconButton}>
               <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.text} />
             </Pressable>
-            <Text style={styles.timeText}>
-              {clock(positionSec)} / {clock(durationSec)}
-            </Text>
+            <Pressable
+              onPress={() => {
+                bumpChrome();
+                setShowRemaining((v) => !v);
+              }}
+              hitSlop={8}>
+              <Text style={styles.timeText}>
+                {showRemaining
+                  ? `- ${remaining(Math.max(0, durationSec - positionSec))}`
+                  : `${clock(positionSec)} / ${clock(durationSec)}`}
+              </Text>
+            </Pressable>
             <View style={styles.controlsRight}>
               <Pressable
                 onPress={() => {
