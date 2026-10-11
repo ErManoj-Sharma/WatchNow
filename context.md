@@ -82,7 +82,7 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 ## Conventions
 
 - Settings screen pattern: `Section` (red uppercase eyebrow + card) + shared `Row` with optional `divider` prop; sub-options open via the local `InfoModal` shell (Customization, Index, Artwork). Action rows are `SettingRow`, toggle rows `ToggleRow` (RN Switch, accent track).
-- Home-section toggles live in `src/lib/prefs.ts` (KV in `app_setting` table: `show_recently_added`, `show_continue_watching`, `show_youtube_shows`; defaults ON). Home (`index.tsx`) re-reads prefs on each focus. YouTube toggle is persisted but no-op until a YouTube section ships.
+- Home-section toggles live in `src/lib/prefs.ts` (KV in `app_setting` table: `show_recently_added`, `show_continue_watching`, `show_youtube_shows` [reserved/no-op], `show_favorites`; defaults ON). Home (`index.tsx`) re-reads prefs on each focus; section order: Continue watching → Recently Added → My List → Movies → Web Series.
 - Update/share: `src/lib/update.ts` — GitHub-releases API check (public, no backend), `Share.share` with the releases link.
 - Scanner: deleted files are purged on rescan (deep-delete entries + progress + media row); same-scan moves recovered by name+size, cross-scan moves count as delete+re-add (progress lost).
 - Player gestures all live in the single responder chain in `src/app/player.tsx` — read the architecture note above before touching it.
