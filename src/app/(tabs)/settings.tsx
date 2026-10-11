@@ -1,9 +1,22 @@
+import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button } from '@/components/button';
 import { Row } from '@/components/progress-bar';
 import { ScanIndicator } from '@/components/scan-indicator';
 import {
@@ -18,10 +31,19 @@ import {
   type ScanRoot,
 } from '@/db/repositories';
 import { fetchMissingPosters } from '@/features/metadata/fetcher';
-import { pickMovieFolder, folderStillAccessible } from '@/features/scanner/roots';
+import { folderStillAccessible, pickMovieFolder } from '@/features/scanner/roots';
 import { startScan } from '@/features/scanner/scan-store';
+import {
+  checkForLatestRelease,
+  compareSemver,
+  getInstalledVersion,
+  shareApp,
+  type LatestRelease,
+} from '@/lib/update';
 import { colors, font, radius, spacing } from '@/theme/colors';
 import { formatBytes, formatTimestamp } from '@/utils/format';
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -29,6 +51,67 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <Text style={styles.eyebrow}>{title}</Text>
       <View style={styles.card}>{children}</View>
     </View>
+  );
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
+function SettingRow({
+  icon,
+  label,
+  hint,
+  value,
+  tint,
+  onPress,
+  accessory,
+  divider,
+}: {
+  icon: IoniconName;
+  label: string;
+  hint?: string;
+  value?: string;
+  tint?: string;
+  onPress?: () => void;
+  accessory?: React.ReactNode;
+  divider?: boolean;
+}) {
+  const content = (
+    <>
+      <Ionicons name={icon} size={18} color={tint ?? colors.textSecondary} style={styles.rowIcon} />
+      <View style={styles.rowBody}>
+        <Text style={[styles.rowLabel, tint ? { color: tint } : null]} numberOfLines={1}>
+          {label}
+        </Text>
+        {hint ? (
+          <Text style={styles.rowHint} numberOfLines={1}>
+            {hint}
+          </Text>
+        ) : null}
+      </View>
+      {value ? (
+        <Text style={[styles.rowValue, tint ? { color: tint } : null]} numberOfLines={1}>
+          {value}
+        </Text>
+      ) : null}
+      {accessory ??
+        (onPress ? <Ionicons name="chevron-forward" size={14} color={colors.textMuted} /> : null)}
+    </>
+  );
+  return (
+    <>
+      {onPress ? (
+        <Pressable
+          onPress={onPress}
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+          {content}
+        </Pressable>
+      ) : (
+        <View style={styles.row}>{content}</View>
+      )}
+      {divider ? <Divider /> : null}
+    </>
   );
 }
 
@@ -43,6 +126,34 @@ function Stat({ value, label, tint }: { value: string; label: string; tint?: str
   );
 }
 
+function InfoModal({
+  visible,
+  title,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalBody}>{children}</ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [root, setRootState] = useState<ScanRoot | null>(null);
@@ -52,6 +163,14 @@ export default function SettingsScreen() {
   const [omdbKey, setOmdbKey] = useState('');
   const [tmdbSaved, setTmdbSaved] = useState(false);
   const [omdbSaved, setOmdbSaved] = useState(false);
+  const [latest, setLatest] = useState<LatestRelease | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [artworkOpen, setArtworkOpen] = useState(false);
+  const [indexOpen, setIndexOpen] = useState(false);
+
+  const installed = getInstalledVersion();
+  const hasUpdate = Boolean(latest && compareSemver(latest.version, installed) > 0);
 
   const reload = useCallback(async () => {
     const r = await getRoot();
@@ -67,6 +186,21 @@ export default function SettingsScreen() {
       reload();
     }, [reload]),
   );
+
+  const checkUpdates = useCallback(async () => {
+    setChecking(true);
+    setLatest(await checkForLatestRelease());
+    setChecking(false);
+    setChecked(true);
+  }, []);
+
+  useEffect(() => {
+    if (checked) return;
+    checkForLatestRelease().then((r) => {
+      setLatest(r);
+      setChecked(true);
+    });
+  }, [checked]);
 
   const onChangeFolder = useCallback(async () => {
     const picked = await pickMovieFolder();
@@ -107,6 +241,18 @@ export default function SettingsScreen() {
     Alert.alert('Posters refreshed', `${applied} poster(s) matched and applied.`);
   }, []);
 
+  const onShareApp = useCallback(() => {
+    shareApp().catch(() => Alert.alert('Error', 'Sharing is not available on this device.'));
+  }, []);
+
+  const onUpdateApp = useCallback(() => {
+    if (hasUpdate && latest) {
+      void WebBrowser.openBrowserAsync(latest.url);
+    } else {
+      void checkUpdates();
+    }
+  }, [hasUpdate, latest, checkUpdates]);
+
   return (
     <ScrollView
       style={styles.container}
@@ -118,51 +264,161 @@ export default function SettingsScreen() {
       <Text style={styles.heading}>Settings</Text>
       <ScanIndicator />
 
+      <View style={styles.identity}>
+        <View style={styles.identityBadge}>
+          <Ionicons name="film" size={26} color={colors.accent} />
+        </View>
+        <View style={styles.identityBody}>
+          <Text style={styles.identityName}>WatchNow</Text>
+          <Text style={styles.identityTag}>Offline media library</Text>
+        </View>
+        <View style={styles.versionPill}>
+          <Text style={styles.versionPillText}>{installed}</Text>
+        </View>
+      </View>
+
       <Section title="Library">
-        <Text style={styles.folderName}>{root?.displayName ?? 'No folder selected'}</Text>
-        <Text style={styles.folderUri} numberOfLines={1} selectable>
-          {root?.documentUri ?? 'Pick a folder to start scanning'}
-        </Text>
-        <Row label="Last scan" value={formatTimestamp(root?.lastSuccessfulScanAt)} divider />
-        <View style={styles.statusRow}>
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: !root ? colors.textMuted : accessible ? colors.success : colors.warning },
-            ]}
-          />
-          <Text style={styles.statusText}>
-            {!root ? 'Folder access not set up' : accessible ? 'Folder access OK' : 'Permission lost — reselect the folder'}
-          </Text>
-        </View>
-        <View style={styles.actions}>
-          <Button label="Rescan library" onPress={() => startScan()} />
-          <Button label={root ? 'Change folder' : 'Choose folder'} variant="secondary" onPress={onChangeFolder} />
-          {root && !accessible ? <Button label="Re-grant access" variant="secondary" onPress={onChangeFolder} /> : null}
-        </View>
+        <SettingRow
+          icon="folder-open"
+          label={
+            root?.displayName
+              ? root.displayName.charAt(0).toUpperCase() + root.displayName.slice(1)
+              : 'No folder selected'
+          }
+          hint={root?.documentUri ?? 'Pick a folder to start scanning'}
+          onPress={onChangeFolder}
+          divider
+        />
+        <SettingRow
+          icon="time-outline"
+          label="Last scan"
+          value={formatTimestamp(root?.lastSuccessfulScanAt)}
+          divider
+        />
+        <SettingRow
+          icon={
+            !root
+              ? 'alert-circle-outline'
+              : accessible
+                ? 'checkmark-circle-outline'
+                : 'warning-outline'
+          }
+          label={
+            !root
+              ? 'Folder access not set up'
+              : accessible
+                ? 'Folder access OK'
+                : 'Permission lost — reselect the folder'
+          }
+          tint={!root ? colors.textMuted : accessible ? colors.success : colors.warning}
+          divider
+        />
+        <SettingRow icon="refresh" label="Rescan library" onPress={() => startScan()} divider />
+        <SettingRow
+          icon="swap-horizontal"
+          label={root ? 'Change folder' : 'Choose folder'}
+          onPress={onChangeFolder}
+          {...(root && !accessible ? { divider: true } : {})}
+        />
+        {root && !accessible ? (
+          <SettingRow icon="lock-open-outline" label="Re-grant access" onPress={onChangeFolder} />
+        ) : null}
       </Section>
 
       <Section title="Index">
-        <View style={styles.statStrip}>
-          <Stat value={String(stats?.movieCount ?? 0)} label="Movies" />
-          <Stat value={String(stats?.seriesCount ?? 0)} label="Series" />
-          <Stat value={String(stats?.episodeCount ?? 0)} label="Episodes" />
-          <Stat
-            value={String(stats?.missingCount ?? 0)}
-            label="Missing"
-            tint={(stats?.missingCount ?? 0) > 0 ? colors.warning : undefined}
-          />
-        </View>
-        <View style={styles.sizeStrip}>
-          <Row label="Video files" value={String(stats?.mediaCount ?? 0)} divider />
-          <Row label="Total size" value={formatBytes(stats?.totalBytes) || '—'} />
-        </View>
+        <SettingRow
+          icon="stats-chart-outline"
+          label="Index details"
+          hint="Counts, file total & library size"
+          onPress={() => setIndexOpen(true)}
+        />
       </Section>
 
       <Section title="Artwork">
+        <SettingRow
+          icon="color-wand-outline"
+          label="Artwork settings"
+          hint="Poster providers, API keys & refresh"
+          onPress={() => setArtworkOpen(true)}
+        />
+      </Section>
+
+      <Section title="Maintenance">
+        <SettingRow
+          icon="trash-outline"
+          label="Clear thumbnail cache"
+          onPress={() => {
+            clearThumbnailCache()
+              .then(() => Alert.alert('Done', 'Thumbnail cache cleared.'))
+              .catch(() => Alert.alert('Error', 'Could not clear thumbnail cache.'));
+          }}
+          divider
+        />
+        <SettingRow
+          icon="list-outline"
+          label="Classification review"
+          onPress={() => router.push('/review')}
+        />
+      </Section>
+
+      <Section title="About">
+        <SettingRow
+          icon={hasUpdate ? 'arrow-down-circle' : 'arrow-down-circle-outline'}
+          label="Update app"
+          tint={hasUpdate ? colors.warning : undefined}
+          accessory={
+            <>
+              {hasUpdate ? (
+                <View style={styles.newBadge}>
+                  <Text style={styles.newBadgeText}>NEW</Text>
+                </View>
+              ) : null}
+              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+            </>
+          }
+          onPress={onUpdateApp}
+          divider
+        />
+        <SettingRow icon="information-circle-outline" label="Installed version" value={installed} divider />
+        <SettingRow
+          icon="sparkles-outline"
+          label="Latest version"
+          value={latest?.version ?? '—'}
+          tint={hasUpdate ? colors.warning : undefined}
+          divider
+        />
+        <SettingRow
+          icon="refresh-outline"
+          label="Check for updates"
+          onPress={checking ? undefined : checkUpdates}
+          accessory={
+            checking ? <ActivityIndicator size="small" color={colors.accent} /> : undefined
+          }
+          divider
+        />
+        <SettingRow
+          icon="share-social-outline"
+          label="Share app"
+          hint="Send the download link to a friend"
+          onPress={onShareApp}
+        />
+      </Section>
+
+      <Text style={styles.footer}>
+        WatchNow v{installed} ({Constants.expoConfig?.android?.versionCode ?? 1}) · playback never leaves your device
+      </Text>
+      <Text style={styles.footer}>
+        This product uses the TMDB API but is not endorsed or certified by TMDB. Show data from{' '}
+        <Text style={styles.link} onPress={() => Linking.openURL('https://www.tvmaze.com/api')}>
+          TVmaze
+        </Text>
+        . Movie data from OMDb.
+      </Text>
+
+      <InfoModal visible={artworkOpen} title="Artwork" onClose={() => setArtworkOpen(false)}>
         <Text style={styles.hint}>
-          Optional — fetches cover art from TMDB, TVmaze and OMDb; local video frames stay as fallback. Keys are stored only
-          on this device. TMDB is blocked on some Indian ISPs; the others still work.
+          Fetches cover art from TMDB, TVmaze and OMDb; local video frames stay as fallback. Keys are stored only on
+          this device. TMDB is blocked on some Indian ISPs; the others still work.
         </Text>
         <Text style={styles.fieldLabel}>TMDB API key</Text>
         <TextInput
@@ -190,34 +446,29 @@ export default function SettingsScreen() {
           style={styles.input}
         />
         {omdbSaved ? <Text style={styles.saved}>Saved</Text> : null}
-        <View style={styles.actions}>
-          <Button label="Refresh missing posters" variant="secondary" onPress={onRefreshPosters} />
-        </View>
-      </Section>
-
-      <Section title="Maintenance">
-        <View style={styles.actions}>
-          <Button
-            label="Clear thumbnail cache"
-            variant="secondary"
+        <View style={styles.modalRows}>
+          <SettingRow
+            icon="color-wand-outline"
+            label="Refresh missing posters"
             onPress={() => {
-              clearThumbnailCache()
-                .then(() => Alert.alert('Done', 'Thumbnail cache cleared.'))
-                .catch(() => Alert.alert('Error', 'Could not clear thumbnail cache.'));
+              setArtworkOpen(false);
+              onRefreshPosters();
             }}
           />
-          <Button label="Classification review" variant="secondary" onPress={() => router.push('/review')} />
         </View>
-      </Section>
+      </InfoModal>
 
-      <Text style={styles.footer}>WatchNow · offline media library · playback never leaves your device</Text>
-      <Text style={styles.footer}>
-        This product uses the TMDB API but is not endorsed or certified by TMDB. Show data from{' '}
-        <Text style={styles.link} onPress={() => Linking.openURL('https://www.tvmaze.com/api')}>
-          TVmaze
-        </Text>
-        . Movie data from OMDb.
-      </Text>
+      <InfoModal visible={indexOpen} title="Index" onClose={() => setIndexOpen(false)}>
+        <View style={styles.statStrip}>
+          <Stat value={String(stats?.movieCount ?? 0)} label="Movies" />
+          <Stat value={String(stats?.seriesCount ?? 0)} label="Series" />
+          <Stat value={String(stats?.episodeCount ?? 0)} label="Episodes" />
+        </View>
+        <View style={styles.sizeStrip}>
+          <Row label="Video files" value={String(stats?.mediaCount ?? 0)} divider />
+          <Row label="Total size" value={formatBytes(stats?.totalBytes) || '—'} />
+        </View>
+      </InfoModal>
     </ScrollView>
   );
 }
@@ -232,6 +483,47 @@ const styles = StyleSheet.create({
     fontSize: font.hero,
     fontWeight: '900',
     marginBottom: spacing.md,
+  },
+  identity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  identityBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  identityBody: {
+    flex: 1,
+  },
+  identityName: {
+    color: colors.text,
+    fontSize: font.heading,
+    fontWeight: '800',
+  },
+  identityTag: {
+    color: colors.textMuted,
+    fontSize: font.small,
+    marginTop: 2,
+  },
+  versionPill: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  versionPillText: {
+    color: colors.textSecondary,
+    fontSize: font.small,
+    fontWeight: '700',
   },
   section: {
     marginBottom: spacing.lg,
@@ -248,38 +540,93 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    padding: spacing.md,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.md,
   },
-  folderName: {
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + 2,
+    paddingVertical: 13,
+  },
+  rowPressed: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  rowIcon: {
+    width: 20,
+  },
+  rowBody: {
+    flex: 1,
+  },
+  rowLabel: {
+    color: colors.text,
+    fontSize: font.body,
+    fontWeight: '600',
+  },
+  rowHint: {
+    color: colors.textMuted,
+    fontSize: font.caption,
+    marginTop: 2,
+  },
+  rowValue: {
+    color: colors.textSecondary,
+    fontSize: font.small,
+    fontWeight: '700',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+  },
+  newBadge: {
+    backgroundColor: colors.warning,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginRight: spacing.xs,
+  },
+  newBadgeText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    maxHeight: '85%',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  modalTitle: {
     color: colors.text,
     fontSize: font.heading,
     fontWeight: '800',
   },
-  folderUri: {
-    color: colors.textMuted,
-    fontSize: font.small,
-    marginTop: 2,
-    marginBottom: spacing.xs,
+  modalBody: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
   },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    color: colors.textSecondary,
-    fontSize: font.caption,
+  modalRows: {
+    marginTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   statStrip: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    paddingVertical: spacing.md,
   },
   stat: {
     flex: 1,
@@ -302,18 +649,18 @@ const styles = StyleSheet.create({
   sizeStrip: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
-    marginTop: spacing.xs,
   },
   hint: {
     color: colors.textMuted,
     fontSize: font.small,
-    marginBottom: spacing.md,
+    paddingTop: spacing.md,
     lineHeight: font.small * 1.5,
   },
   fieldLabel: {
     color: colors.textSecondary,
     fontSize: font.caption,
     fontWeight: '700',
+    marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
   input: {
@@ -335,10 +682,6 @@ const styles = StyleSheet.create({
   link: {
     color: colors.textSecondary,
     textDecorationLine: 'underline',
-  },
-  actions: {
-    gap: spacing.sm,
-    marginTop: spacing.md,
   },
   footer: {
     color: colors.textMuted,
