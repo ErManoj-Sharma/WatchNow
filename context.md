@@ -64,7 +64,7 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 | `057bae8` | pin preservesPitch |
 | `625ba91` | double-tap ±10s, centered play/pause, Ionicons UI |
 | `969574a` | tap time → remaining countdown |
-| (pending) | swipe brightness/volume + this doc pair |
+| `b0615d5` | swipe brightness/volume + project.md/context.md docs |
 
 ## Where things live
 
