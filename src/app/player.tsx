@@ -57,6 +57,7 @@ export default function PlayerScreen() {
   const [durationSec, setDurationSec] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
+  const [barHeight, setBarHeight] = useState(0);
   const [ratio, setRatio] = useState<RatioMode>('Fit');
   const [ratioFlash, setRatioFlash] = useState<RatioMode | null>(null);
   const ratioFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -551,35 +552,10 @@ export default function PlayerScreen() {
         </View>
       ) : null}
 
-      {audioPickerOpen ? (
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={() => {
-            setAudioPickerOpen(false);
-            bumpChrome();
-          }}
-        />
-      ) : null}
-      {audioPickerOpen && media && !error ? (
-        <View style={[styles.audioPicker, { bottom: insets.bottom + 110 }]}>
-          <Text style={styles.audioPickerTitle}>Audio track</Text>
-          {player.availableAudioTracks.map((t, i) => (
-            <Pressable
-              key={t.id ?? i}
-              onPress={() => {
-                player.audioTrack = t;
-                setAudioPickerOpen(false);
-                bumpChrome();
-              }}
-              style={[styles.audioOption, player.audioTrack?.id === t.id && styles.audioOptionActive]}>
-              <Text style={styles.audioOptionText}>{t.label || t.language || `Track ${i + 1}`}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-
       {controlsVisible && media && !error ? (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.sm }]}>
+        <View
+          style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.sm }]}
+          onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}>
           {showNext ? (
             <View style={styles.nextRow}>
               <Pressable
@@ -682,6 +658,33 @@ export default function PlayerScreen() {
               */}
             </View>
           </View>
+        </View>
+      ) : null}
+
+      {audioPickerOpen ? (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => {
+            setAudioPickerOpen(false);
+            bumpChrome();
+          }}
+        />
+      ) : null}
+      {audioPickerOpen && media && !error ? (
+        <View style={[styles.audioPicker, { bottom: barHeight }]}>
+          <Text style={styles.audioPickerTitle}>Audio track</Text>
+          {player.availableAudioTracks.map((t, i) => (
+            <Pressable
+              key={t.id ?? i}
+              onPress={() => {
+                player.audioTrack = t;
+                setAudioPickerOpen(false);
+                bumpChrome();
+              }}
+              style={[styles.audioOption, player.audioTrack?.id === t.id && styles.audioOptionActive]}>
+              <Text style={styles.audioOptionText}>{t.label || t.language || `Track ${i + 1}`}</Text>
+            </Pressable>
+          ))}
         </View>
       ) : null}
 
