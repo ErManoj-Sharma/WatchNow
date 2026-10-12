@@ -2,14 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Row } from '@/components/progress-bar';
 import { Thumb } from '@/components/thumb';
-import { getMovie, toggleFavorite, type MovieDetail } from '@/db/repositories';
+import { getMovie, setMediaImdbId, toggleFavorite, type MovieDetail } from '@/db/repositories';
 import { qualityOf } from '@/features/classification/parse';
 import { ensureThumbnail } from '@/features/library/thumbnails';
+import { fetchMissingPosters } from '@/features/metadata/fetcher';
 import { colors, font, radius, spacing } from '@/theme/colors';
 import { formatBytes, formatDuration } from '@/utils/format';
 
@@ -19,6 +20,9 @@ export default function MovieScreen() {
   const { width, height } = useWindowDimensions();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [imdbModal, setImdbModal] = useState(false);
+  const [imdbInput, setImdbInput] = useState('');
+  const [imdbError, setImdbError] = useState<string | null>(null);
   const probedRef = useRef(false);
   const [scrollY] = useState(() => new Animated.Value(0));
 
@@ -49,6 +53,15 @@ export default function MovieScreen() {
   if (!movie) {
     return <View style={styles.container} />;
   }
+
+  const commitImdb = async (value: string | null) => {
+    await setMediaImdbId(movie.mediaItemId, value);
+    setImdbModal(false);
+    await reload();
+    fetchMissingPosters()
+      .then(() => reload())
+      .catch(() => undefined);
+  };
 
   const quality = qualityOf(movie.fileName, movie.relativePath);
   const watched =
@@ -181,6 +194,16 @@ export default function MovieScreen() {
               active={showInfo}
               onPress={() => setShowInfo((v) => !v)}
             />
+            <ActionButton
+              icon="pricetag-outline"
+              label="IMDb"
+              active={!!movie.imdbId}
+              onPress={() => {
+                setImdbInput(movie.imdbId ?? '');
+                setImdbError(null);
+                setImdbModal(true);
+              }}
+            />
           </View>
 
           {/* QUICK STATS */}
@@ -264,8 +287,57 @@ export default function MovieScreen() {
         style={[styles.back, { top: insets.top + spacing.xs }]}>
         <Ionicons name="chevron-back" size={24} color={colors.text} />
       </Pressable>
+
+      {/* IMDb ID MODAL */}
+      {imdbModal ? (
+        <Pressable style={styles.modalBackdrop} onPress={() => setImdbModal(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.cardTitle}>IMDb ID</Text>
+            <Text style={styles.modalHint}>
+              Paste tt0111161 or an imdb.com link. Leave empty and Save to clear.
+            </Text>
+            <TextInput
+              value={imdbInput}
+              onChangeText={(t) => {
+                setImdbInput(t);
+                setImdbError(null);
+              }}
+              placeholder="tt0111161 or imdb.com/title/tt…"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.modalInput}
+            />
+            {imdbError ? <Text style={styles.modalError}>{imdbError}</Text> : null}
+            <View style={styles.modalRow}>
+              <Pressable onPress={() => setImdbModal(false)} hitSlop={6} style={styles.modalBtn}>
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                hitSlop={6}
+                style={[styles.modalBtn, styles.modalBtnSave]}
+                onPress={() => {
+                  const trimmed = imdbInput.trim();
+                  const normalized = trimmed ? normalizeImdbId(trimmed) : null;
+                  if (trimmed && !normalized) {
+                    setImdbError('Not an IMDb id — try tt0111161');
+                    return;
+                  }
+                  void commitImdb(normalized);
+                }}>
+                <Text style={[styles.modalBtnText, styles.modalBtnSaveText]}>Save</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      ) : null}
     </View>
   );
+}
+
+function normalizeImdbId(raw: string): string | null {
+  const match = raw.match(/tt\d{7,10}/i);
+  return match ? `tt${match[0].slice(2)}` : null;
 }
 
 const extra = StyleSheet.create({
@@ -522,5 +594,70 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+    zIndex: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  modalHint: {
+    color: colors.textSecondary,
+    fontSize: font.caption,
+    marginBottom: spacing.xs,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: font.body,
+    backgroundColor: colors.background,
+  },
+  modalError: {
+    color: colors.accentSoft,
+    fontSize: font.caption,
+    fontWeight: '600',
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  modalBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  modalBtnText: {
+    color: colors.text,
+    fontSize: font.body,
+    fontWeight: '700',
+  },
+  modalBtnSave: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  modalBtnSaveText: {
+    color: '#fff',
   },
 });

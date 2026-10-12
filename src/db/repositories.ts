@@ -29,6 +29,7 @@ export type MovieDetail = {
   completed: number | null;
   isFavorite: number;
   classificationSource: string;
+  imdbId: string | null;
 };
 
 export type SeriesSummary = {
@@ -318,6 +319,7 @@ export async function getMovie(id: number): Promise<MovieDetail | null> {
             m.id AS mediaItemId, m.document_uri AS documentUri, m.relative_path AS relativePath,
             m.file_name AS fileName, m.size_bytes AS sizeBytes, m.duration_ms AS durationMs,
             m.thumbnail_path AS thumbnailPath, m.poster_url AS posterUrl,
+            m.imdb_id AS imdbId,
             p.position_ms AS positionMs, p.completed AS completed,
             (SELECT COUNT(*) FROM favorite WHERE library_entry_id = e.id) AS isFavorite
      FROM library_entry e
@@ -510,13 +512,13 @@ export async function setSetting(key: string, value: string): Promise<void> {
 }
 
 export type PendingPoster =
-  | { target: 'media'; id: number; title: string; fileName: string; kind: 'movie' }
+  | { target: 'media'; id: number; title: string; fileName: string; kind: 'movie'; imdbId: string | null }
   | { target: 'entry'; id: number; title: string; fileName: null; kind: 'series' };
 
 export async function listPendingPosters(limit = 40): Promise<PendingPoster[]> {
   const db = await getDb();
-  const movies = await db.getAllAsync<{ id: number; title: string; file_name: string }>(
-    `SELECT m.id, e.title, m.file_name
+  const movies = await db.getAllAsync<{ id: number; title: string; file_name: string; imdb_id: string | null }>(
+    `SELECT m.id, e.title, m.file_name, m.imdb_id
      FROM media_item m
      JOIN library_entry e ON e.media_item_id = m.id AND e.kind = 'movie'
      WHERE m.metadata_attempted = 0 AND m.poster_url IS NULL AND m.availability_status = 'available'
@@ -530,7 +532,14 @@ export async function listPendingPosters(limit = 40): Promise<PendingPoster[]> {
     limit,
   );
   return [
-    ...movies.map((m) => ({ target: 'media' as const, id: m.id, title: m.title, fileName: m.file_name, kind: 'movie' as const })),
+    ...movies.map((m) => ({
+      target: 'media' as const,
+      id: m.id,
+      title: m.title,
+      fileName: m.file_name,
+      kind: 'movie' as const,
+      imdbId: m.imdb_id,
+    })),
     ...series.map((s) => ({ target: 'entry' as const, id: s.id, title: s.title, fileName: null, kind: 'series' as const })),
   ];
 }
@@ -554,6 +563,16 @@ export async function setEntryPoster(id: number, posterUrl: string | null, sourc
     source,
     Date.now(),
     id,
+  );
+}
+
+export async function setMediaImdbId(mediaId: number, imdbId: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE media_item SET imdb_id = ?, metadata_attempted = 0, poster_url = NULL, poster_source = NULL, updated_at = ? WHERE id = ?',
+    imdbId,
+    Date.now(),
+    mediaId,
   );
 }
 

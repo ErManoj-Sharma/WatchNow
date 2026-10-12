@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import { tvmazePoster, tmdbPoster } from './providers';
+import { omdbPosterById, tvmazePoster, tmdbPoster } from './providers';
 
 function jsonFetch(body: unknown, status = 200): typeof fetch {
   return (async () =>
@@ -44,4 +44,32 @@ test('tvmazePoster matches shows without a key', async () => {
   const hit = await tvmazePoster('Breaking.Bad', 2008, fetchImpl);
   assert.equal(hit?.posterUrl, 'https://static.tvmaze.com/x.jpg');
   assert.equal(hit?.source, 'tvmaze');
+});
+
+test('omdbPosterById queries i=tt… and returns the poster', async () => {
+  let url = '';
+  const fetchImpl = (async (input: RequestInfo | URL) => {
+    url = String(input);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ Title: 'The Shawshank Redemption', Poster: 'https://m.media-amazon.com/x.jpg', Type: 'movie', Response: 'True' }),
+    } as Response;
+  }) as typeof fetch;
+  const hit = await omdbPosterById('tt0111161', 'KEY', fetchImpl);
+  assert.ok(url.includes('i=tt0111161'));
+  assert.equal(hit?.posterUrl, 'https://m.media-amazon.com/x.jpg');
+  assert.equal(hit?.source, 'omdb');
+});
+
+test('omdbPosterById rejects a series id so the title chain can take over', async () => {
+  const fetchImpl = jsonFetch({ Title: 'Breaking Bad', Poster: 'https://m.media-amazon.com/x.jpg', Type: 'series', Response: 'True' });
+  const hit = await omdbPosterById('tt0903747', 'KEY', fetchImpl);
+  assert.equal(hit, null);
+});
+
+test('omdbPosterById returns null when OMDb has no record', async () => {
+  const fetchImpl = jsonFetch({ Response: 'False' });
+  const hit = await omdbPosterById('tt9999999', 'KEY', fetchImpl);
+  assert.equal(hit, null);
 });

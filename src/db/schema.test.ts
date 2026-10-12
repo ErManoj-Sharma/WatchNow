@@ -11,7 +11,7 @@ function migrate(): DatabaseSync {
   return db;
 }
 
-test('migrations apply in order and land on user_version 5', () => {
+test('migrations apply in order and land on user_version 6', () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON;');
   for (const m of MIGRATIONS) {
@@ -19,7 +19,7 @@ test('migrations apply in order and land on user_version 5', () => {
     db.exec(`PRAGMA user_version = ${m.version}`);
   }
   const { user_version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  assert.equal(user_version, 5);
+  assert.equal(user_version, 6);
 });
 
 test('youtube tables exist with expected columns', () => {

@@ -88,3 +88,19 @@ export async function omdbPoster(
   if (!isMetadataMatch(title, data.Title, fileYear, resultYear)) return null;
   return { posterUrl: data.Poster, source: 'omdb' };
 }
+
+// Exact lookup by IMDb id (i=tt...). Authoritative — no title/year matching.
+// Returns null on a wrong-kind id so the caller can fall back to the title chain.
+export async function omdbPosterById(
+  imdbId: string,
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PosterHit | null> {
+  const data = (await getJson(
+    `https://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(imdbId)}`,
+    fetchImpl,
+  )) as { Title?: string; Poster?: string; Type?: string; Response?: string } | null;
+  if (!data || data.Response === 'False' || !data.Title || !data.Poster || data.Poster === 'N/A') return null;
+  if (data.Type && data.Type !== 'movie') return null;
+  return { posterUrl: data.Poster, source: 'omdb' };
+}

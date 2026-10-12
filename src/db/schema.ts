@@ -137,6 +137,10 @@ const V5 = `
 UPDATE media_item SET thumbnail_path = NULL WHERE thumbnail_path IS NOT NULL;
 `;
 
+const V6 = `
+ALTER TABLE media_item ADD COLUMN imdb_id TEXT;
+`;
+
 const V4 = `
 CREATE TABLE youtube_playlist (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,4 +176,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 3, sql: V3 },
   { version: 4, sql: V4 },
   { version: 5, sql: V5 },
+  { version: 6, sql: V6 },
 ];

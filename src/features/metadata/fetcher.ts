@@ -9,7 +9,7 @@ import {
 } from '@/db/repositories';
 
 import { extractYear, queryTitleOf } from './match';
-import { omdbPoster, tvmazePoster, tmdbPoster, type FetchDeps, type PosterHit } from './providers';
+import { omdbPoster, omdbPosterById, tvmazePoster, tmdbPoster, type FetchDeps, type PosterHit } from './providers';
 
 const THROTTLE_MS = 300;
 
@@ -84,6 +84,12 @@ async function resolvePoster(
       return null; // provider unreachable/failed — fall through to the next one
     }
   };
+  if (omdbKey && item.kind === 'movie' && item.imdbId) {
+    const { imdbId } = item;
+    const key = omdbKey;
+    const hit = await attempt(() => omdbPosterById(imdbId, key, fetchImpl));
+    if (hit) return hit;
+  }
   if (tmdbKey && getTmdbReachable()) {
     try {
       const hit = await tmdbPoster(title, item.kind, tmdbKey, fileYear, fetchImpl);
