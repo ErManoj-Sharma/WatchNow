@@ -1,5 +1,6 @@
 import '@/global.css';
 
+import * as SplashScreen from 'expo-splash-screen';
 import { Stack } from 'expo-router/stack';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -8,12 +9,18 @@ import { View } from 'react-native';
 import { getDb } from '@/db/database';
 import { colors } from '@/theme/colors';
 
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
+    const finish = () => {
+      setReady(true);
+      SplashScreen.hideAsync().catch(() => undefined);
+    };
     getDb()
-      .then(() => setReady(true))
-      .catch(() => setReady(true));
+      .then(finish)
+      .catch(finish);
   }, []);
 
   if (!ready) {
