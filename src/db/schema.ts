@@ -130,6 +130,13 @@ const V3 = `
 UPDATE media_item SET thumbnail_path = NULL;
 `;
 
+// Stale rows still pointed at expo-video's temp cache (cache/VideoThumbnails/*.jpg);
+// those files get purged by the OS, so cards hit ENOENT every launch. Nothing
+// persists thumbnail paths anymore — session refs are regenerated on demand.
+const V5 = `
+UPDATE media_item SET thumbnail_path = NULL WHERE thumbnail_path IS NOT NULL;
+`;
+
 const V4 = `
 CREATE TABLE youtube_playlist (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,4 +171,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 2, sql: V2 },
   { version: 3, sql: V3 },
   { version: 4, sql: V4 },
+  { version: 5, sql: V5 },
 ];

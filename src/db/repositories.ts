@@ -476,11 +476,6 @@ export async function updateMediaDuration(mediaId: number, durationMs: number): 
   await db.runAsync('UPDATE media_item SET duration_ms = ?, updated_at = ? WHERE id = ? AND (duration_ms IS NULL OR duration_ms != ?)', Math.round(durationMs), Date.now(), mediaId, Math.round(durationMs));
 }
 
-export async function setMediaThumbnail(mediaId: number, path: string | null): Promise<void> {
-  const db = await getDb();
-  await db.runAsync('UPDATE media_item SET thumbnail_path = ?, updated_at = ? WHERE id = ?', path, Date.now(), mediaId);
-}
-
 export async function clearThumbnailCache(): Promise<number> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ id: number; thumbnail_path: string }>('SELECT id, thumbnail_path FROM media_item WHERE thumbnail_path IS NOT NULL');
