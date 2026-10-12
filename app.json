@@ -40,6 +40,12 @@
     },
     "ios": {
       "bundleIdentifier": "com.ermanojsharma.WatchNow"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c5c3f403-9b06-44aa-9951-f719360f3670"
+      }
     }
   }
 }
