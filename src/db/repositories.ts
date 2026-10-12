@@ -521,13 +521,13 @@ export async function listPendingPosters(limit = 40): Promise<PendingPoster[]> {
     `SELECT m.id, e.title, m.file_name, m.imdb_id
      FROM media_item m
      JOIN library_entry e ON e.media_item_id = m.id AND e.kind = 'movie'
-     WHERE m.metadata_attempted = 0 AND m.poster_url IS NULL AND m.availability_status = 'available'
+     WHERE m.metadata_attempted = 0 AND m.availability_status = 'available'
      ORDER BY m.id LIMIT ?`,
     limit,
   );
   const series = await db.getAllAsync<{ id: number; title: string }>(
     `SELECT id, title FROM library_entry
-     WHERE kind = 'series' AND metadata_attempted = 0 AND poster_url IS NULL
+     WHERE kind = 'series' AND metadata_attempted = 0
      ORDER BY id LIMIT ?`,
     limit,
   );
@@ -569,7 +569,7 @@ export async function setEntryPoster(id: number, posterUrl: string | null, sourc
 export async function setMediaImdbId(mediaId: number, imdbId: string | null): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    'UPDATE media_item SET imdb_id = ?, metadata_attempted = 0, poster_url = NULL, poster_source = NULL, updated_at = ? WHERE id = ?',
+    'UPDATE media_item SET imdb_id = ?, metadata_attempted = 0, updated_at = ? WHERE id = ?',
     imdbId,
     Date.now(),
     mediaId,
@@ -597,9 +597,9 @@ export async function countPendingPosters(): Promise<number> {
 
 export async function resetPosterAttempts(): Promise<number> {
   const db = await getDb();
-  await db.runAsync('UPDATE media_item SET metadata_attempted = 0, updated_at = ? WHERE poster_url IS NULL', Date.now());
+  await db.runAsync('UPDATE media_item SET metadata_attempted = 0, updated_at = ?', Date.now());
   const res = await db.runAsync(
-    "UPDATE library_entry SET metadata_attempted = 0, updated_at = ? WHERE kind = 'series' AND poster_url IS NULL",
+    "UPDATE library_entry SET metadata_attempted = 0, updated_at = ? WHERE kind = 'series'",
     Date.now(),
   );
   return res.changes;

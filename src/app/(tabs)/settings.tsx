@@ -566,7 +566,7 @@ export default function SettingsScreen() {
         <View style={styles.modalRows}>
           <SettingRow
             icon="color-wand-outline"
-            label="Refresh missing posters"
+            label="Refresh all posters"
             onPress={() => {
               setArtworkOpen(false);
               onRefreshPosters();

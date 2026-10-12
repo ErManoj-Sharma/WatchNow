@@ -29,8 +29,8 @@ export function Thumb({
   borderRadius?: number;
 }) {
   const localThumb: ThumbSource = useThumbnail(mediaId ?? null, uri ?? null);
-  const [posterFailed, setPosterFailed] = useState(false);
-  const isPoster = Boolean(posterUrl) && !posterFailed;
+  const [failedPoster, setFailedPoster] = useState<string | null>(null);
+  const isPoster = Boolean(posterUrl) && failedPoster !== posterUrl;
   const path = isPoster ? posterUrl : localThumb;
   const initial = (title ?? '?').trim().charAt(0).toUpperCase() || '?';
   return (
@@ -42,7 +42,7 @@ export function Thumb({
           contentFit="cover"
           transition={200}
           onError={(error) => {
-            if (isPoster) setPosterFailed(true);
+            if (isPoster) setFailedPoster(posterUrl ?? null);
             else console.warn('WatchNow: thumbnail image failed to load', mediaId, error);
           }}
         />

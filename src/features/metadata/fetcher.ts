@@ -25,6 +25,30 @@ export async function fetchMissingPosters(deps: FetchDeps = {}): Promise<number>
   }
 }
 
+// Targeted single-movie fetch by IMDb id — instant, bypasses the batch
+// lock/ordering. Leaves metadata_attempted=0 on miss so the batch's
+// title chain can still try later. Keeps the old poster until replaced.
+export async function refreshPosterById(
+  mediaId: number,
+  imdbId: string,
+  deps: FetchDeps = {},
+): Promise<boolean> {
+  const { fetchImpl = fetch } = deps;
+  const saved = await getSetting('omdb_api_key');
+  const omdbKey = saved || process.env.EXPO_PUBLIC_OMDB_API_KEY || null;
+  if (!omdbKey) return false;
+  try {
+    const hit = await omdbPosterById(imdbId, omdbKey, fetchImpl);
+    if (!hit) return false;
+    await setMediaPoster(mediaId, hit.posterUrl, hit.source);
+    console.info(`WatchNow: poster ✓ by IMDb id ${imdbId} → ${hit.source} ${hit.posterUrl}`);
+    return true;
+  } catch (error) {
+    console.warn(`WatchNow: poster by IMDb id failed — ${(error as Error)?.message ?? error}`);
+    return false;
+  }
+}
+
 async function runBatch({
   fetchImpl = fetch,
   sleep = defaultSleep,

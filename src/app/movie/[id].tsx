@@ -10,7 +10,7 @@ import { Thumb } from '@/components/thumb';
 import { getMovie, setMediaImdbId, toggleFavorite, type MovieDetail } from '@/db/repositories';
 import { qualityOf } from '@/features/classification/parse';
 import { ensureThumbnail } from '@/features/library/thumbnails';
-import { fetchMissingPosters } from '@/features/metadata/fetcher';
+import { refreshPosterById } from '@/features/metadata/fetcher';
 import { colors, font, radius, spacing } from '@/theme/colors';
 import { formatBytes, formatDuration } from '@/utils/format';
 
@@ -58,9 +58,13 @@ export default function MovieScreen() {
     await setMediaImdbId(movie.mediaItemId, value);
     setImdbModal(false);
     await reload();
-    fetchMissingPosters()
-      .then(() => reload())
-      .catch(() => undefined);
+    if (value) {
+      refreshPosterById(movie.mediaItemId, value)
+        .then((ok) => {
+          if (ok) return reload();
+        })
+        .catch(() => undefined);
+    }
   };
 
   const quality = qualityOf(movie.fileName, movie.relativePath);
