@@ -11,7 +11,7 @@ function migrate(): DatabaseSync {
   return db;
 }
 
-test('migrations apply in order and land on user_version 7', () => {
+test('migrations apply in order and land on user_version 8', () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON;');
   for (const m of MIGRATIONS) {
@@ -19,7 +19,7 @@ test('migrations apply in order and land on user_version 7', () => {
     db.exec(`PRAGMA user_version = ${m.version}`);
   }
   const { user_version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  assert.equal(user_version, 7);
+  assert.equal(user_version, 8);
 });
 
 test('youtube tables exist with expected columns', () => {
@@ -125,4 +125,28 @@ test('tv tables exist and deleting a playlist cascades to its channels', () => {
 
   db.exec('DELETE FROM tv_playlist');
   assert.equal((db.prepare('SELECT COUNT(*) c FROM tv_channel').get() as { c: number }).c, 0);
+});
+
+test('tv_favorite survives a channel re-sync (keyed by stream_url)', () => {
+  const db = migrate();
+  db.prepare('INSERT INTO tv_playlist (url, name, channel_count, created_at) VALUES (?, ?, ?, ?)').run(
+    'u', 'hin', 1, 1,
+  );
+  const { id } = db.prepare('SELECT id FROM tv_playlist').get() as { id: number };
+  db.prepare('INSERT INTO tv_channel (playlist_id, name, stream_url, created_at) VALUES (?, ?, ?, ?)').run(
+    id, 'Aaj Tak', 'http://example.com/a.m3u8', 1,
+  );
+  // favorite the channel by stream_url
+  db.prepare('INSERT INTO tv_favorite (stream_url, created_at) VALUES (?, ?)').run('http://example.com/a.m3u8', 1);
+
+  // re-sync: delete + reinsert channels (as saveTvPlaylist does)
+  db.exec('DELETE FROM tv_channel');
+  db.prepare('INSERT INTO tv_channel (playlist_id, name, stream_url, created_at) VALUES (?, ?, ?, ?)').run(
+    id, 'Aaj Tak', 'http://example.com/a.m3u8', 2,
+  );
+
+  const { fav } = db
+    .prepare('SELECT f.stream_url IS NOT NULL AS fav FROM tv_channel c LEFT JOIN tv_favorite f ON f.stream_url = c.stream_url')
+    .get() as { fav: number };
+  assert.equal(fav, 1);
 });

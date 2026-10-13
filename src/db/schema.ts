@@ -192,6 +192,15 @@ CREATE TABLE tv_channel (
 CREATE INDEX idx_tv_channel_playlist ON tv_channel(playlist_id, name);
 `;
 
+// Favorites are keyed by stream_url (not channel id) so they survive a playlist
+// re-sync, which deletes and reinserts tv_channel rows.
+const V8 = `
+CREATE TABLE tv_favorite (
+  stream_url TEXT PRIMARY KEY NOT NULL,
+  created_at INTEGER NOT NULL
+);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, sql: V1 },
   { version: 2, sql: V2 },
@@ -200,4 +209,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 5, sql: V5 },
   { version: 6, sql: V6 },
   { version: 7, sql: V7 },
+  { version: 8, sql: V8 },
 ];

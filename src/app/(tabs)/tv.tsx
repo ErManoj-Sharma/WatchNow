@@ -5,7 +5,7 @@ import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Thumb } from '@/components/thumb';
-import { listTvChannels, type TvChannel } from '@/features/tv/store';
+import { listTvChannels, setTvFavorite, type TvChannel } from '@/features/tv/store';
 import { colors, font, radius, spacing } from '@/theme/colors';
 
 const LOGO = 56;
@@ -18,12 +18,15 @@ type TvSection = { title: string; data: TvChannel[][] };
 function ChannelRow({
   channel,
   onPlay,
+  onToggleFavorite,
   divider,
 }: {
   channel: TvChannel;
   onPlay: (c: TvChannel) => void;
+  onToggleFavorite: (c: TvChannel) => void;
   divider?: boolean;
 }) {
+  const saved = channel.favorite === 1;
   return (
     <>
       <Pressable
@@ -46,6 +49,13 @@ function ChannelRow({
             </Text>
           ) : null}
         </View>
+        <Pressable hitSlop={8} onPress={() => onToggleFavorite(channel)} style={styles.favBtn}>
+          <Ionicons
+            name={saved ? 'heart' : 'heart-outline'}
+            size={20}
+            color={saved ? colors.accent : colors.textMuted}
+          />
+        </Pressable>
         <Ionicons name="play-circle-outline" size={22} color={colors.textMuted} />
       </Pressable>
       {divider ? <View style={styles.divider} /> : null}
@@ -56,6 +66,7 @@ function ChannelRow({
 export default function TvScreen() {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
+  const [showSaved, setShowSaved] = useState(false);
   const [channels, setChannels] = useState<TvChannel[]>([]);
 
   useFocusEffect(
@@ -66,10 +77,22 @@ export default function TvScreen() {
     }, []),
   );
 
+  const onToggleFavorite = useCallback((c: TvChannel) => {
+    const next = c.favorite === 1 ? 0 : 1;
+    setTvFavorite(c.streamUrl, next === 1)
+      .then(() => {
+        setChannels((prev) =>
+          prev.map((x) => (x.streamUrl === c.streamUrl ? { ...x, favorite: next } : x)),
+        );
+      })
+      .catch((e) => console.warn('WatchNow: toggle favorite failed', e));
+  }, []);
+
   const sections = useMemo<TvSection[]>(() => {
     const q = query.trim().toLowerCase();
     const map = new Map<string, TvChannel[]>();
     for (const c of channels) {
+      if (showSaved && c.favorite !== 1) continue;
       if (
         q &&
         !c.name.toLowerCase().includes(q) &&
@@ -85,7 +108,7 @@ export default function TvScreen() {
     return [...map.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([title, data]) => ({ title, data: [data] }));
-  }, [channels, query]);
+  }, [channels, query, showSaved]);
 
   const onPlay = (c: TvChannel) =>
     router.push({
@@ -97,10 +120,19 @@ export default function TvScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <View style={styles.headingRow}>
         <Text style={styles.heading}>TV</Text>
-        <Pressable onPress={() => router.push('/tv-playlists')} hitSlop={12} style={styles.addLink}>
-          <Ionicons name="add-circle-outline" size={22} color={colors.text} />
-          <Text style={styles.addLinkText}>Playlists</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => setShowSaved((s) => !s)} hitSlop={12} style={styles.addLink}>
+            <Ionicons
+              name={showSaved ? 'heart' : 'heart-outline'}
+              size={22}
+              color={showSaved ? colors.accent : colors.text}
+            />
+          </Pressable>
+          <Pressable onPress={() => router.push('/tv-playlists')} hitSlop={12} style={styles.addLink}>
+            <Ionicons name="add-circle-outline" size={22} color={colors.text} />
+            <Text style={styles.addLinkText}>Playlists</Text>
+          </Pressable>
+        </View>
       </View>
       <View style={styles.searchWrap}>
         <Ionicons name="search-outline" size={18} color={colors.textMuted} style={{ marginRight: spacing.sm }} />
@@ -135,6 +167,7 @@ export default function TvScreen() {
                 key={c.id}
                 channel={c}
                 onPlay={onPlay}
+                onToggleFavorite={onToggleFavorite}
                 divider={i < item.length - 1}
               />
             ))}
@@ -143,9 +176,11 @@ export default function TvScreen() {
         SectionSeparatorComponent={() => null}
         ListEmptyComponent={
           <Text style={styles.empty}>
-            {query.trim()
-              ? 'No matching channels'
-              : 'No channels yet — tap Playlists above to add an M3U link'}
+            {showSaved
+              ? 'No saved channels yet — tap the heart on a channel to save it'
+              : query.trim()
+                ? 'No matching channels'
+                : 'No channels yet — tap Playlists above to add an M3U link'}
           </Text>
         }
       />
@@ -169,6 +204,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: font.hero,
     fontWeight: '900',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   addLink: {
     flexDirection: 'row',
@@ -197,7 +237,7 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   eyebrow: {
-    color: colors.accentSoft,
+    color: colors.textSecondary,
     fontSize: font.caption,
     fontWeight: '700',
     letterSpacing: 1,
@@ -228,6 +268,9 @@ const styles = StyleSheet.create({
   rowHint: {
     color: colors.textMuted,
     fontSize: font.small,
+  },
+  favBtn: {
+    padding: spacing.xs,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
