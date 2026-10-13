@@ -55,14 +55,6 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="search"
-        options={{
-          title: 'Search',
-          tabBarAccessibilityLabel: 'Search',
-          tabBarIcon: ({ color }) => <Ionicons name="search" color={color} size={24} />,
-        }}
-      />
-      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',

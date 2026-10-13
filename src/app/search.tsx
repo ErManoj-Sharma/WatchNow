@@ -1,19 +1,17 @@
-import { BlurTargetView } from 'expo-blur';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Thumb } from '@/components/thumb';
 import { searchLibrary, type SearchResult } from '@/db/repositories';
-import { setBlurTarget } from '@/lib/blur';
 import { colors, font, radius, spacing } from '@/theme/colors';
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
-  const rootRef = useRef<View>(null);
 
   const sections = useMemo(() => {
     const groups = [
@@ -23,12 +21,6 @@ export default function SearchScreen() {
     ];
     return groups.filter((g) => g.data.length > 0);
   }, [results]);
-
-  useFocusEffect(
-    useCallback(() => {
-      setBlurTarget(rootRef.current);
-    }, []),
-  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -45,8 +37,11 @@ export default function SearchScreen() {
   }, [query]);
 
   return (
-    <BlurTargetView ref={rootRef} style={styles.container}>
-      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.background }}>
+    <View style={styles.container}>
+      <View style={[styles.headerRow, { paddingTop: insets.top + spacing.sm }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeBtn}>
+          <Ionicons name="close" size={24} color={colors.text} />
+        </Pressable>
         <Text style={styles.heading}>Search</Text>
       </View>
       <View style={{ flex: 1, paddingHorizontal: spacing.md }}>
@@ -58,6 +53,7 @@ export default function SearchScreen() {
         style={styles.input}
         autoCorrect={false}
         autoCapitalize="none"
+        autoFocus
         returnKeyType="search"
       />
       {query.trim() ? (
@@ -117,7 +113,7 @@ export default function SearchScreen() {
         )}
       />
       </View>
-    </BlurTargetView>
+    </View>
   );
 }
 
@@ -126,11 +122,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  closeBtn: {
+    padding: 2,
+  },
   heading: {
     color: colors.text,
     fontSize: font.hero,
     fontWeight: '900',
-    marginBottom: spacing.md,
   },
   input: {
     backgroundColor: colors.surfaceRaised,

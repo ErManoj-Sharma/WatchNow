@@ -36,6 +36,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.background },
         }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="search" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="player" options={{ animation: 'fade' }} />
         <Stack.Screen name="youtube-player" options={{ animation: 'fade' }} />
       </Stack>

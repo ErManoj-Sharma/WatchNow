@@ -423,6 +423,9 @@ export default function HomeScreen() {
                 <Ionicons name="sync-outline" size={22} color={colors.text} />
               )}
             </Pressable>
+            <Pressable onPress={() => router.push('/search')} hitSlop={10} style={styles.iconBtn}>
+              <Ionicons name="search-outline" size={22} color={colors.text} />
+            </Pressable>
             <Pressable onPress={() => router.push('/settings')} hitSlop={10} style={styles.iconBtn}>
               <Ionicons name="settings-outline" size={22} color={colors.text} />
             </Pressable>
