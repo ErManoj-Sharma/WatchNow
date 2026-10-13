@@ -41,6 +41,7 @@ import {
   checkForLatestRelease,
   compareSemver,
   getInstalledVersion,
+  installUpdate,
   shareApp,
   type LatestRelease,
 } from '@/lib/update';
@@ -210,6 +211,7 @@ export default function SettingsScreen() {
   const [omdbSaved, setOmdbSaved] = useState(false);
   const [latest, setLatest] = useState<LatestRelease | null>(null);
   const [checking, setChecking] = useState(false);
+  const [downloadPct, setDownloadPct] = useState<number | null>(null);
   const [checked, setChecked] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
@@ -302,16 +304,24 @@ export default function SettingsScreen() {
   }, []);
 
   const onShareApp = useCallback(() => {
-    shareApp().catch(() => Alert.alert('Error', 'Sharing is not available on this device.'));
-  }, []);
+    if (downloadPct !== null) return;
+    setDownloadPct(0);
+    shareApp(setDownloadPct)
+      .catch(() => Alert.alert('Error', 'Sharing is not available on this device.'))
+      .finally(() => setDownloadPct(null));
+  }, [downloadPct]);
 
   const onUpdateApp = useCallback(() => {
-    if (hasUpdate && latest) {
-      void WebBrowser.openBrowserAsync(latest.url);
-    } else {
+    if (!(hasUpdate && latest)) {
       void checkUpdates();
+      return;
     }
-  }, [hasUpdate, latest, checkUpdates]);
+    if (downloadPct !== null) return;
+    setDownloadPct(0);
+    installUpdate(setDownloadPct)
+      .catch(() => void WebBrowser.openBrowserAsync(latest.url))
+      .finally(() => setDownloadPct(null));
+  }, [hasUpdate, latest, checkUpdates, downloadPct]);
 
   return (
     <BlurTargetView ref={rootRef} style={styles.container}>
@@ -447,14 +457,21 @@ export default function SettingsScreen() {
           label="Update app"
           tint={hasUpdate ? colors.warning : undefined}
           accessory={
-            <>
-              {hasUpdate ? (
-                <View style={styles.newBadge}>
-                  <Text style={styles.newBadgeText}>NEW</Text>
-                </View>
-              ) : null}
-              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-            </>
+            downloadPct !== null ? (
+              <>
+                <Text style={styles.pctText}>{downloadPct}%</Text>
+                <ActivityIndicator size="small" color={colors.accent} />
+              </>
+            ) : (
+              <>
+                {hasUpdate ? (
+                  <View style={styles.newBadge}>
+                    <Text style={styles.newBadgeText}>NEW</Text>
+                  </View>
+                ) : null}
+                <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+              </>
+            )
           }
           onPress={onUpdateApp}
           divider
@@ -706,6 +723,12 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 10,
     fontWeight: '800',
+  },
+  pctText: {
+    color: colors.warning,
+    fontSize: font.small,
+    fontWeight: '800',
+    marginRight: spacing.xs,
   },
   modalBackdrop: {
     flex: 1,

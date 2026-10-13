@@ -32,7 +32,8 @@
         }
       ],
       "expo-sqlite",
-      "expo-video"
+      "expo-video",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,
