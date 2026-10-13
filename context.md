@@ -23,6 +23,7 @@ Everything needed to pick this project up cold. Project overview in `project.md`
   - Once an RN overlay sits over the `VideoView`, it intercepts all touches — the native bar can't be re-summoned by tap.
 - **All player gestures live on one responder chain** on a single full-screen `View` (grant/move/release): hold=2x, vertical swipe=brightness/volume, double-tap=±10s, single tap (300ms grace)=chrome toggle. Do not add a child `Pressable` over the video — it steals the responder and silently kills the other gestures (this exact bug happened once).
 - **Save-position never touches the native player during teardown**: `saveNow()` reads `lastPosRef`/`lastDurRef` updated by `timeUpdate` — the shared object is already released when the focus-cleanup runs on back-navigation (this caused a native crash once).
+- **Dual-engine player (uncommitted)**: expo-video first; codec-unsupported errors (EAC3/Dolby etc.) hand off to in-app **libVLC 3.6.5** via the custom Expo module `modules/vlc-player/` (`VlcPlayerView`, Kotlin view + JS wrapper, Android-only). Handoff resumes at the **live** position (`lastPosRef`, not the DB resume value). Both engines share the same custom chrome/gestures — `engineRef` + `vlcRef` in `player.tsx`; expo listeners must guard `engineRef.current !== 'expo'` or the still-alive expo player's stale `timeUpdate` stomps VLC's position state (this bug happened). Audio-track chip works on both engines (VLC exposes its own track list via `getAudioTracks`/`setAudioTrack`). expo auto-picks the first audio track on `readyToPlay` (its default is silent/no-track); unsupported tracks fall through to the VLC handoff. In-app transcoding was considered and rejected (ffmpeg-kit is EOL); the VLC fallback replaced the old "re-encode to AAC" dead end. The friendly error message remains for non-codec failures.
 - **Brightness is app-local** (`Brightness.setBrightnessAsync`) — no WRITE_SETTINGS permission friction; overrides system brightness only while the app is foregrounded. Volume is **system** volume (music stream) via `react-native-volume-manager`.
 - **Navigation bar** hidden during playback via `expo-navigation-bar` `setVisibilityAsync`, restored on screen unmount. `setBehaviorAsync` does NOT exist in the installed version.
 - **Expo installs only**: always `npx expo install <pkg>` (SDK-compatible versions). `react-native-volume-manager` is the one plain-npm dep (not an Expo module; legacy Java module, works via RN interop layer on new arch).
@@ -38,7 +39,13 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 - **TMDB is ISP-blocked in India** (user's Jio/Airtel). Fetcher marks TMDB unreachable for the batch after the first timeout; TVmaze (shows, keyless) and OMDb (user's key) do the real work. Keep the TMDB probe logic.
 - **OMDb `t=` is exact-match**: query with year/quality stripped (`queryTitleOf`), else "Premalu 2024" finds nothing.
 - 2-day-old releases (e.g. "Matchbox The Movie 2026") are often not indexed by any provider — correct behavior, not a bug.
-- Many downloaded rips use **EAC3/Dolby audio** the phone can't decode (`Decoder init failed [-49999]`). Device limitation; the player shows a friendly "try an AAC rip / re-encode" message. In-app transcoding was considered and rejected (ffmpeg-kit is EOL; a transcoder module + queue UI is a whole feature). Workaround shared with user: `ffmpeg -i in.mkv -c:v copy -c:a aac out.mkv`.
+- Many downloaded rips use **EAC3/Dolby audio** the phone can't decode (`Decoder init failed [-49999]`). Device limitation — now handled by the **libVLC fallback** (see architecture): expo errors → automatic handoff to VLC, which bundles its own decoders. The friendly "re-encode" message only shows for non-codec failures now.
+- **libVLC/Expo-view gotchas** (cost days; read before touching `modules/vlc-player/`):
+  - Expo View events wrap single-value payloads as `{ payload: value }` inside `nativeEvent` (expo-modules-core `convertEventBody`); `Unit` events arrive as `{}`. Never pass `e.nativeEvent` as the value — unwrap `.payload`.
+  - RN never re-lays-out native view children added after mount (facebook/react-native#17968) — libVLC inflates its TextureView from a ViewStub during `attachViews` (post-mount), so the ExpoView needs `override val shouldUseAndroidLayout = true` or the surface stays 0x0 forever and `play()` silently defers (`areSurfacesWaiting`).
+  - libVLC's plain `Media(FileDescriptor)` path registers the raw fd as an `fd://` mrl read **at play() time** — keep the `ParcelFileDescriptor` open for the media's whole lifetime (closing it early = instant EBADF/EncounteredError).
+  - `attachViews` is `@MainThread` and Expo AsyncFunctions run on a background module queue — post all view/player ops with `post {}`. Use TextureView (`attachViews(layout, null, false, true)`), not SurfaceView (hole-punch never produces a surface inside RN's hierarchy).
+  - Package is lowercase `org.videolan.libvlc` in 3.6.5 (was `libVLC` in older versions); `setVolume` has no getter; `MediaPlayer.setRate(float)` exists and works; `getAudioTracks()` returns `TrackDescription[] {id, name}` including a `Disable` entry (id -1).
 - **MKV damaged seek index** (`Unexpected IllegalStateException: No valid varint length mask found`): Matroska Cues broken in the latter part of the file — a seek near EOF lands on invalid/zero bytes and `ParsableByteArray.readUnsignedVarint()` throws (fatal ExoPlayer source error; VLC tolerates it). Verified not our seek code (player.tsx ±10s, clamped). Player shows a friendly "re-mux to rebuild index" message; file fix: `ffmpeg -i in.mkv -c copy out.mkv`.
 - expo-video: use **`replaceAsync`** (sync `replace` warns/freezes on iOS); `SubtitleTrack`/`AudioTrack` identify tracks by **`id`** (not `identifier`); `playbackRate` property + `preservesPitch=true` for 2x (pinned explicitly).
 - **Thumbnails/duration: player pipeline only** (`src/features/library/thumbnails.ts`). `expo-video-thumbnails` (MediaMetadataRetriever) "succeeds" with **all-black frames** on the user's MKV/HEVC rips (verified on device) — never use it. `ensureThumbnail` = queued throwaway `createVideoPlayer`: wait readyToPlay → persist `duration_ms` → `generateThumbnailsAsync` at ~20% in (capped 45s, mid-file retry) → native image ref used directly as expo-image `source`. Refs can't be persisted → session-only, lazy per visible card, one decoder at a time. Migration v3 wiped old black JPEGs.
@@ -110,7 +117,8 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 
 ## Where things live
 
-- Player (all gestures/chrome): `src/app/player.tsx`
+- Player (all gestures/chrome, dual-engine seam): `src/app/player.tsx`
+- VLC fallback module (Expo module, Kotlin view + JS wrapper): `modules/vlc-player/`
 - Home-screen prefs: `src/lib/prefs.ts` · update check + share: `src/lib/update.ts`
 - DB schema + migrations: `src/db/schema.ts` · all queries: `src/db/repositories.ts`
 - Poster pipeline: `src/features/metadata/{match,providers,fetcher}.ts` (+ tests)
@@ -125,6 +133,10 @@ Everything needed to pick this project up cold. Project overview in `project.md`
 
 1. `npx tsc --noEmit`
 2. `npx expo lint`
-3. `npm test` (46 passing: metadata, classification, youtube, schema)
+3. `npm test` (60 passing: metadata, classification, youtube, schema)
 4. If native deps changed: gradle rebuild + tell user to reinstall
 5. Ask for commit approval — never auto-commit
+
+## Uncommitted work
+
+- **libVLC dual-engine fallback** — complete and verified on-device by the user. New `modules/vlc-player/` Expo module + engine seam in `player.tsx` (handoff, VLC-mode gestures/controls, VLC audio-track picker, expo first-track auto-pick, expo-listener engine guards). Awaiting user-approved commit. User rule: never commit without asking.

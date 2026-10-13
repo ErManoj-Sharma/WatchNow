@@ -25,6 +25,7 @@ import {
 } from '@/db/repositories';
 import { colors, font, spacing } from '@/theme/colors';
 import { formatDuration } from '@/utils/format';
+import { VlcVideoView, type VlcVideoViewHandle } from '../../modules/vlc-player/src/VlcPlayerView';
 
 type EntryMeta = Awaited<ReturnType<typeof entryForMedia>>;
 
@@ -45,6 +46,9 @@ function remaining(seconds: number): string {
   return h > 0 ? `${h}h ${pad(m)}m ${pad(s)}s` : `${m}m ${pad(s)}s`;
 }
 
+// Step-by-step debug trail — view with: adb logcat -s ReactNativeJS VlcPlayer
+const log = (...args: unknown[]) => console.log('[player]', ...args);
+
 export default function PlayerScreen() {
   const params = useLocalSearchParams<{ mediaId?: string; entryId?: string }>();
   const mediaId = Number(params.mediaId);
@@ -58,6 +62,7 @@ export default function PlayerScreen() {
   const [durationSec, setDurationSec] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
+  const [vlcTracks, setVlcTracks] = useState<{ id: number; name: string; selected?: boolean }[]>([]);
   const [barHeight, setBarHeight] = useState(0);
   const [ratio, setRatio] = useState<RatioMode>('Fit');
   const [ratioFlash, setRatioFlash] = useState<RatioMode | null>(null);
@@ -101,19 +106,43 @@ export default function PlayerScreen() {
     p.preservesPitch = true;
   });
 
+  // Dual-engine playback: expo-video is the default. On a codec error (e.g. EAC3/Dolby,
+  // which many devices can't decode) we hand just that file to embedded libVLC, which
+  // bundles its own decoders. Only broken files ever touch VLC.
+  const [engine, setEngine] = useState<'expo' | 'vlc'>('expo');
+  const engineRef = useRef<'expo' | 'vlc'>('expo');
+  const vlcRef = useRef<VlcVideoViewHandle>(null);
+  const vlcUriRef = useRef<string | null>(null);
+  const vlcPlayingRef = useRef(false);
+  const lastLoggedProgressRef = useRef(0);
+
+  useEffect(() => {
+    engineRef.current = engine;
+    log('engine =', engine, '->', engine === 'vlc' ? 'VlcVideoView' : 'expo VideoView');
+  }, [engine]);
+
   useEffect(() => {
     if (!Number.isFinite(mediaId)) return;
     let mounted = true;
+    log('loading media', 'mediaId=', mediaId);
     Promise.all([getMedia(mediaId), getProgress(mediaId), entryForMedia(mediaId)])
       .then(([m, prog, e]) => {
         if (!mounted) return;
         setMedia(m);
         setEntry(e);
         if (prog && !prog.completed) resumeRef.current = prog.positionMs;
-        if (m) player.replaceAsync(m.documentUri).catch(() => setError('Could not load file'));
-        else setError('File not found');
+        if (m) {
+          log('media loaded', 'uri=', m.documentUri, 'resumeMs=', resumeRef.current);
+          player.replaceAsync(m.documentUri).catch((err) => {
+            log('replaceAsync FAILED:', err instanceof Error ? err.message : String(err));
+            setError('Could not load file');
+          });
+        } else setError('File not found');
       })
-      .catch(() => mounted && setError('Could not load file'));
+      .catch((err) => {
+        log('media load FAILED:', err instanceof Error ? err.message : String(err));
+        if (mounted) setError('Could not load file');
+      });
     return () => {
       mounted = false;
     };
@@ -143,11 +172,92 @@ export default function PlayerScreen() {
     }
   }, [entry]);
 
+  // Shared by expo-video's timeUpdate and libVLC's onProgress so both engines feed the
+  // same position state, next-episode offer, and periodic progress save.
+  const handleProgress = useCallback(
+    (currentTime: number, duration: number) => {
+      lastPosRef.current = currentTime;
+      if (duration > 0) lastDurRef.current = duration;
+      setPositionSec(currentTime);
+      if (currentTime - lastLoggedProgressRef.current >= 5 || currentTime < lastLoggedProgressRef.current) {
+        lastLoggedProgressRef.current = currentTime;
+        log('progress', 'engine=', engineRef.current, 'pos=', currentTime.toFixed(1), 'dur=', lastDurRef.current.toFixed(1));
+      }
+      if (lastDurRef.current > 0) {
+        const remainingSec = lastDurRef.current - currentTime;
+        if (remainingSec <= 180 && remainingSec > 5 && !nextCheckedRef.current) {
+          nextCheckedRef.current = true;
+          loadNext();
+        } else if (remainingSec > 180 && nextCheckedRef.current) {
+          nextCheckedRef.current = false;
+          setShowNext(null);
+        }
+      }
+      const now = Date.now();
+      if (now - lastSavedRef.current > 10000) {
+        lastSavedRef.current = now;
+        saveProgress(mediaId, currentTime * 1000, lastDurRef.current > 0 ? lastDurRef.current * 1000 : null).catch(() => undefined);
+      }
+    },
+    [loadNext, mediaId],
+  );
+
+  // Shared end-of-media handling for both engines.
+  const handleEnd = useCallback(() => {
+    // useVideoPlayer(null) fires a phantom playToEnd at mount (dur=0) — ignoring it
+    // prevents marking the file completed with position 0.
+    if (lastDurRef.current <= 0) {
+      log('ended ignored (duration not known yet)');
+      return;
+    }
+    log('ended', 'engine=', engineRef.current, 'dur=', lastDurRef.current.toFixed(1));
+    lastPosRef.current = lastDurRef.current;
+    saveNow(true);
+    if (!nextCheckedRef.current) {
+      nextCheckedRef.current = true;
+      loadNext();
+    }
+  }, [loadNext, saveNow]);
+
+  // Hand the current file to libVLC (used when expo-video hits a codec error).
+  const switchToVlc = useCallback((uri: string) => {
+    log('switchToVlc', 'uri=', uri, 'resumeMs=', resumeRef.current);
+    vlcUriRef.current = uri;
+    setError(null);
+    setEngine('vlc');
+  }, []);
+
+  // Once the VLC view mounts, load the source. Prefer the live in-session position
+  // (the user may have seeked since load) over the DB resume value.
+  useEffect(() => {
+    if (engine !== 'vlc' || !vlcUriRef.current) return;
+    const uri = vlcUriRef.current;
+    const startSeconds = lastPosRef.current > 0 ? lastPosRef.current : (resumeRef.current || 0) / 1000;
+    const t = setTimeout(() => {
+      log('vlc loadSource', 'uri=', uri, 'startSec=', startSeconds.toFixed(1));
+      vlcRef.current?.loadSource(uri, startSeconds).catch((err) => {
+        log('vlc loadSource FAILED:', err instanceof Error ? err.message : String(err));
+        setError('Could not play this file');
+      });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [engine]);
+
   useEventListener(player, 'statusChange', ({ status, error: playerError }) => {
+    // After the VLC handoff the expo player object is still alive and keeps emitting;
+    // its stale events must not stomp position/state owned by the VLC engine.
+    if (engineRef.current !== 'expo') return;
+    log('statusChange', 'status=', status, 'error=', playerError?.message ?? null);
     if (status === 'error') {
       const raw = playerError?.message ?? 'This file could not be played.';
       // Device lacks a decoder for the audio/video codec (e.g. EAC3/Dolby on many phones)
       const codecIssue = /decoder init failed|unsupported type|eac3|ac3|no decoder/i.test(raw);
+      // Hand codec-unsupported files to libVLC, which bundles its own decoders.
+      if (codecIssue && media?.documentUri && engineRef.current === 'expo') {
+        log('codec error detected -> handing to VLC:', raw);
+        switchToVlc(media.documentUri);
+        return;
+      }
       // MKV seek index (Cues) damaged — a seek lands on invalid EBML bytes mid-file
       const indexIssue = /varint length mask/i.test(raw);
       setError(
@@ -161,6 +271,7 @@ export default function PlayerScreen() {
     }
     if (status === 'readyToPlay' && !seekedRef.current) {
       seekedRef.current = true;
+      log('readyToPlay', 'duration=', player.duration, 'resumeSec=', (resumeRef.current / 1000).toFixed(1));
       if (player.duration > 0) {
         lastDurRef.current = player.duration;
         setDurationSec(player.duration);
@@ -169,40 +280,25 @@ export default function PlayerScreen() {
       if (resumeRef.current > 5) {
         player.currentTime = resumeRef.current / 1000;
       }
+      // expo defaults to no audio track (silent playback); pick the first one.
+      // Codec-unsupported tracks (e.g. EAC3) fall through to the VLC handoff below.
+      const tracks = player.availableAudioTracks;
+      if (tracks.length > 0 && !player.audioTrack) {
+        player.audioTrack = tracks[0];
+      }
       player.play();
       setPlaying(true);
     }
   });
 
   useEventListener(player, 'timeUpdate', ({ currentTime }) => {
-    lastPosRef.current = currentTime;
-    if (player.duration > 0) lastDurRef.current = player.duration;
-    setPositionSec(currentTime);
-    // Offer next episode in the last 3 minutes; retract if the user seeks back
-    if (lastDurRef.current > 0) {
-      const remaining = lastDurRef.current - currentTime;
-      if (remaining <= 180 && remaining > 5 && !nextCheckedRef.current) {
-        nextCheckedRef.current = true;
-        loadNext();
-      } else if (remaining > 180 && nextCheckedRef.current) {
-        nextCheckedRef.current = false;
-        setShowNext(null);
-      }
-    }
-    const now = Date.now();
-    if (now - lastSavedRef.current > 10000) {
-      lastSavedRef.current = now;
-      saveProgress(mediaId, currentTime * 1000, player.duration > 0 ? player.duration * 1000 : null).catch(() => undefined);
-    }
+    if (engineRef.current !== 'expo') return;
+    handleProgress(currentTime, player.duration);
   });
 
   useEventListener(player, 'playToEnd', () => {
-    lastPosRef.current = lastDurRef.current;
-    saveNow(true);
-    if (!nextCheckedRef.current) {
-      nextCheckedRef.current = true;
-      loadNext();
-    }
+    if (engineRef.current !== 'expo') return;
+    handleEnd();
   });
 
   useFocusEffect(
@@ -258,6 +354,17 @@ export default function PlayerScreen() {
   }, []);
 
   const togglePlay = useCallback(() => {
+    log('togglePlay', 'engine=', engineRef.current);
+    if (engineRef.current === 'vlc') {
+      if (vlcPlayingRef.current) {
+        vlcRef.current?.pause();
+        setPlaying(false);
+      } else {
+        vlcRef.current?.play();
+        setPlaying(true);
+      }
+      return;
+    }
     if (player.playing) {
       player.pause();
       setPlaying(false);
@@ -269,6 +376,7 @@ export default function PlayerScreen() {
 
   const cycleSubtitle = useCallback(() => {
     const tracks = player.availableSubtitleTracks;
+    log('cycleSubtitle', 'engine=', engineRef.current, 'available=', tracks.length, 'current=', player.subtitleTrack?.id ?? 'off');
     if (tracks.length === 0) return;
     const current = player.subtitleTrack;
     if (!current) {
@@ -297,7 +405,13 @@ export default function PlayerScreen() {
 
   const onSeekRelease = useCallback(() => {
     if (dragRef.current != null) {
-      player.currentTime = dragRef.current;
+      log('seek', 'engine=', engineRef.current, 'to=', dragRef.current.toFixed(1), 'dur=', lastDurRef.current.toFixed(1));
+      if (engineRef.current === 'vlc') {
+        const dur = lastDurRef.current;
+        if (dur > 0) vlcRef.current?.seek(dragRef.current / dur);
+      } else {
+        player.currentTime = dragRef.current;
+      }
       lastPosRef.current = dragRef.current;
     }
     dragRef.current = null;
@@ -306,7 +420,8 @@ export default function PlayerScreen() {
   const startHold = useCallback(() => {
     holdTimer.current = setTimeout(() => {
       holdActive.current = true;
-      player.playbackRate = 2;
+      if (engineRef.current === 'vlc') vlcRef.current?.setRate(2);
+      else player.playbackRate = 2;
       setShowSpeedBadge(true);
     }, 250);
   }, [player]);
@@ -314,7 +429,8 @@ export default function PlayerScreen() {
   const endHold = useCallback(() => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
     if (holdActive.current) {
-      player.playbackRate = 1;
+      if (engineRef.current === 'vlc') vlcRef.current?.setRate(1);
+      else player.playbackRate = 1;
       setShowSpeedBadge(false);
       holdActive.current = false;
     }
@@ -386,7 +502,11 @@ export default function PlayerScreen() {
         let next = lastPosRef.current + (forward ? 10 : -10);
         if (next < 0) next = 0;
         if (dur > 0 && next > dur) next = dur;
-        player.currentTime = next;
+        if (engineRef.current === 'vlc') {
+          if (dur > 0) vlcRef.current?.seek(next / dur);
+        } else {
+          player.currentTime = next;
+        }
         lastPosRef.current = next;
         setPositionSec(next);
         setSeekFlash(forward ? 'forward' : 'back');
@@ -435,19 +555,58 @@ export default function PlayerScreen() {
   const titleSub = isEpisode ? `Season ${entry?.seasonNumber} · Episode ${entry?.episodeNumber}` : null;
 
   const subtitleLabel = player.subtitleTrack && player.subtitleTrack.id !== 'off' ? 'CC ON' : 'CC';
-  const audioLabel = player.audioTrack
-    ? ((val) => (val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio'))(
-      player.audioTrack.language || player.audioTrack.label,
-    )
-    : 'Audio';
+  const audioLabel = engine === 'vlc'
+    ? (vlcTracks.find((t) => t.selected)?.name ?? 'Audio')
+    : player.audioTrack
+      ? ((val) => (val ? val.charAt(0).toUpperCase() + val.slice(1).toLowerCase() : 'Audio'))(
+        player.audioTrack.language || player.audioTrack.label,
+      )
+      : 'Audio';
 
   const frameAR = ratio === '16:9' ? 16 / 9 : 4 / 3;
   const frameW = Math.min(width, height * frameAR);
 
+  // Events for the libVLC fallback surface; they feed the same state the expo path uses.
+  const vlcEventProps = {
+    onDuration: (sec: number) => {
+      log('vlc onDuration', sec.toFixed(1));
+      lastDurRef.current = sec;
+      setDurationSec(sec);
+    },
+    onProgress: (sec: number) => handleProgress(sec, 0),
+    onPlaying: () => {
+      log('vlc onPlaying');
+      vlcPlayingRef.current = true;
+      setPlaying(true);
+    },
+    onPaused: () => {
+      log('vlc onPaused');
+      vlcPlayingRef.current = false;
+      setPlaying(false);
+    },
+    onEnd: handleEnd,
+    onError: (msg: string) => {
+      log('vlc onError', msg);
+      setError(`Playback failed: ${msg}`);
+    },
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar hidden={!controlsVisible} style="light" />
-      {ratio === '16:9' || ratio === '4:3' ? (
+      {engine === 'vlc' ? (
+        ratio === '16:9' || ratio === '4:3' ? (
+          <View style={styles.ratioFrame}>
+            <VlcVideoView
+              ref={vlcRef}
+              style={{ width: frameW, height: frameW / frameAR }}
+              {...vlcEventProps}
+            />
+          </View>
+        ) : (
+          <VlcVideoView ref={vlcRef} style={StyleSheet.absoluteFill} {...vlcEventProps} />
+        )
+      ) : ratio === '16:9' || ratio === '4:3' ? (
         <View style={styles.ratioFrame}>
           <VideoView
             player={player}
@@ -664,7 +823,17 @@ export default function PlayerScreen() {
               <Pressable
                 onPress={() => {
                   bumpChrome();
-                  setAudioPickerOpen((o) => !o);
+                  if (engineRef.current === 'vlc') {
+                    vlcRef.current?.getAudioTracks().then((tracks) => {
+                      log('audioPicker open engine= vlc tracks=', JSON.stringify(tracks));
+                      setVlcTracks(tracks);
+                      setAudioPickerOpen((o) => !o);
+                    }).catch(() => undefined);
+                  } else {
+                    const tracks = player.availableAudioTracks;
+                    log('audioPicker open', 'engine=', engineRef.current, 'tracks=', JSON.stringify(tracks.map((t) => ({ id: t.id, label: t.label, lang: t.language }))));
+                    setAudioPickerOpen((o) => !o);
+                  }
                 }}
                 hitSlop={8}
                 style={[styles.controlChip, { marginRight: spacing.xl }]}>
@@ -699,18 +868,35 @@ export default function PlayerScreen() {
       {audioPickerOpen && media && !error ? (
         <View style={[styles.audioPicker, { bottom: barHeight }]}>
           <Text style={styles.audioPickerTitle}>Audio track</Text>
-          {player.availableAudioTracks.map((t, i) => (
-            <Pressable
-              key={t.id ?? i}
-              onPress={() => {
-                player.audioTrack = t;
-                setAudioPickerOpen(false);
-                bumpChrome();
-              }}
-              style={[styles.audioOption, player.audioTrack?.id === t.id && styles.audioOptionActive]}>
-              <Text style={styles.audioOptionText}>{t.label || t.language || `Track ${i + 1}`}</Text>
-            </Pressable>
-          ))}
+          {engine === 'vlc'
+            ? vlcTracks.map((t, i) => (
+              <Pressable
+                key={t.id}
+                onPress={() => {
+                  log('setAudioTrack engine= vlc from=', vlcTracks.find((x) => x.selected)?.id ?? null, 'to=', t.id, t.name);
+                  vlcRef.current?.setAudioTrack(t.id).catch(() => undefined);
+                  setVlcTracks((list) => list.map((x) => ({ ...x, selected: x.id === t.id })));
+                  setAudioPickerOpen(false);
+                  bumpChrome();
+                }}
+                style={[styles.audioOption, t.selected && styles.audioOptionActive]}>
+                <Text style={styles.audioOptionText}>{t.name || `Track ${i + 1}`}</Text>
+              </Pressable>
+            ))
+            : player.availableAudioTracks.map((t, i) => (
+              <Pressable
+                key={t.id ?? i}
+                onPress={() => {
+                  log('setAudioTrack', 'engine=', engineRef.current, 'from=', player.audioTrack?.id ?? null, 'to=', t.id, t.label, t.language ?? '');
+                  player.audioTrack = t;
+                  log('setAudioTrack done, now=', player.audioTrack?.id ?? null);
+                  setAudioPickerOpen(false);
+                  bumpChrome();
+                }}
+                style={[styles.audioOption, player.audioTrack?.id === t.id && styles.audioOptionActive]}>
+                <Text style={styles.audioOptionText}>{t.label || t.language || `Track ${i + 1}`}</Text>
+              </Pressable>
+            ))}
         </View>
       ) : null}
 

@@ -4,3 +4,9 @@
 - [x] **Share app feature** — "Share app" row downloads the release APK and sends the file itself via the share sheet (link fallback).
 - [ ] **Test update + share on device** — needs a *newer* release than the installed version: publish a release with an APK, bump `app.json` version below the tag, rebuild the dev APK (native deps: `expo-intent-launcher`, `expo-sharing`), then verify NEW badge → download % → installer, and share sheet sends the APK.
 - [ ] **Test YouTube playlist refresh on device** — show page ↻ button (re-fetches playlist, preserves watch progress, picks up new episodes); looks good so far, re-verify when a new episode is actually added to the channel playlist.
+- [x] **Phase 0 — libVLC via npm wrapper: NO-GO** — `react-native-vlc-media-player` built/installed on SDK 57 but failed at runtime (Paper-only, dead since Nov 2025): even a public MP4 gave `onLoad duration=0` + `onError`, no render. Removed the package + spike. Root cause of the underlying EAC3 need confirmed: device CPH2737 advertises **no EAC3/AC3 MediaCodec**, so expo-video (Media3) can't decode it; libVLC bundles its own decoders → plays anything.
+- [ ] **Embed libVLC engine in-app (custom native module, reference videolan/vlc-android)** — write our own thin Expo native module (Expo Modules API) wrapping `org.videolan.libVLC` (LibVLC + MediaPlayer + SurfaceView), since the npm wrapper is dead. Fallback engine for undecodable audio: expo-video default; on codec-error (`player.tsx:150` hook) hand file to libVLC + re-seek to resume. Non-EAC3 files never touch VLC. Same player UI/gestures/progress — only the decode surface swaps. Tradeoffs: +APK size (libVLC ~100MB; mitigate with arm64-only ABI), minSdk 26 (done via expo-build-properties). **Scope to confirm before native work:** Android-first (iOS later?), embed vs external-VLC-intent.
+
+
+
+# splash screen take too much time to load on android device. so we need to optimize the splash screen loading time.
