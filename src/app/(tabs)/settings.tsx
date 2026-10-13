@@ -507,6 +507,13 @@ export default function SettingsScreen() {
           label="Share app"
           hint="Send the download link to a friend"
           onPress={onShareApp}
+          divider
+        />
+        <SettingRow
+          icon="help-circle-outline"
+          label="How to use"
+          hint="A quick guide to WatchNow"
+          onPress={() => router.push('/how-to-use')}
         />
       </Section>
 
