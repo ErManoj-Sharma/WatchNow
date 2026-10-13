@@ -11,7 +11,7 @@ function migrate(): DatabaseSync {
   return db;
 }
 
-test('migrations apply in order and land on user_version 8', () => {
+test('migrations apply in order and land on user_version 9', () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON;');
   for (const m of MIGRATIONS) {
@@ -19,7 +19,16 @@ test('migrations apply in order and land on user_version 8', () => {
     db.exec(`PRAGMA user_version = ${m.version}`);
   }
   const { user_version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  assert.equal(user_version, 8);
+  assert.equal(user_version, 9);
+});
+
+test('library_entry has an imdb_id column for series', () => {
+  const db = migrate();
+  const cols = db
+    .prepare('PRAGMA table_info(library_entry)')
+    .all()
+    .map((r) => (r as { name: string }).name);
+  assert.ok(cols.includes('imdb_id'), 'library_entry.imdb_id missing');
 });
 
 test('youtube tables exist with expected columns', () => {

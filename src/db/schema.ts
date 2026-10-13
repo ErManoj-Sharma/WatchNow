@@ -201,6 +201,12 @@ CREATE TABLE tv_favorite (
 );
 `;
 
+// Series IMDb id lives on the series library_entry (its poster is
+// library_entry.poster_url, unlike movies whose poster is on media_item).
+const V9 = `
+ALTER TABLE library_entry ADD COLUMN imdb_id TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, sql: V1 },
   { version: 2, sql: V2 },
@@ -210,4 +216,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 6, sql: V6 },
   { version: 7, sql: V7 },
   { version: 8, sql: V8 },
+  { version: 9, sql: V9 },
 ];

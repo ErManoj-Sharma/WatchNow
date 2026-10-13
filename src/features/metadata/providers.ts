@@ -90,17 +90,18 @@ export async function omdbPoster(
 }
 
 // Exact lookup by IMDb id (i=tt...). Authoritative — no title/year matching.
-// Returns null on a wrong-kind id so the caller can fall back to the title chain.
+// kind must match the id's type so a wrong-kind id falls back to the title chain.
 export async function omdbPosterById(
   imdbId: string,
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
+  kind: MediaKind = 'movie',
 ): Promise<PosterHit | null> {
   const data = (await getJson(
     `https://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(imdbId)}`,
     fetchImpl,
   )) as { Title?: string; Poster?: string; Type?: string; Response?: string } | null;
   if (!data || data.Response === 'False' || !data.Title || !data.Poster || data.Poster === 'N/A') return null;
-  if (data.Type && data.Type !== 'movie') return null;
+  if (data.Type && data.Type !== kind) return null;
   return { posterUrl: data.Poster, source: 'omdb' };
 }

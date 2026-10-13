@@ -331,10 +331,10 @@ export async function getMovie(id: number): Promise<MovieDetail | null> {
   return (row as unknown as MovieDetail) ?? null;
 }
 
-export async function getSeries(id: number): Promise<{ series: { id: number; title: string; thumbnailPath: string | null; posterUrl: string | null; isFavorite: number }; seasons: SeasonRow[]; episodes: EpisodeRow[] } | null> {
+export async function getSeries(id: number): Promise<{ series: { id: number; title: string; thumbnailPath: string | null; posterUrl: string | null; imdbId: string | null; isFavorite: number }; seasons: SeasonRow[]; episodes: EpisodeRow[] } | null> {
   const db = await getDb();
-  const series = await db.getFirstAsync<{ id: number; title: string; thumbnailPath: string | null; posterUrl: string | null; isFavorite: number }>(
-    `SELECT e.id, e.title, e.poster_url AS posterUrl,
+  const series = await db.getFirstAsync<{ id: number; title: string; thumbnailPath: string | null; posterUrl: string | null; imdbId: string | null; isFavorite: number }>(
+    `SELECT e.id, e.title, e.poster_url AS posterUrl, e.imdb_id AS imdbId,
             (SELECT m.thumbnail_path FROM library_entry se
               JOIN library_entry ep ON ep.parent_id = se.id
               JOIN episode_media em ON em.episode_entry_id = ep.id AND em.is_primary = 1
@@ -573,6 +573,17 @@ export async function setMediaImdbId(mediaId: number, imdbId: string | null): Pr
     imdbId,
     Date.now(),
     mediaId,
+  );
+}
+
+// Series IMDb id — stored on the series library_entry (kind='series').
+export async function setEntryImdbId(entryId: number, imdbId: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE library_entry SET imdb_id = ?, metadata_attempted = 0, updated_at = ? WHERE id = ?',
+    imdbId,
+    Date.now(),
+    entryId,
   );
 }
 

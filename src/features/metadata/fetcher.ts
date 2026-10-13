@@ -49,6 +49,28 @@ export async function refreshPosterById(
   }
 }
 
+// Targeted series poster fetch by IMDb id — saves to the series library_entry.
+export async function refreshEntryPosterById(
+  entryId: number,
+  imdbId: string,
+  deps: FetchDeps = {},
+): Promise<boolean> {
+  const { fetchImpl = fetch } = deps;
+  const saved = await getSetting('omdb_api_key');
+  const omdbKey = saved || process.env.EXPO_PUBLIC_OMDB_API_KEY || null;
+  if (!omdbKey) return false;
+  try {
+    const hit = await omdbPosterById(imdbId, omdbKey, fetchImpl, 'series');
+    if (!hit) return false;
+    await setEntryPoster(entryId, hit.posterUrl, hit.source);
+    console.info(`WatchNow: series poster ✓ by IMDb id ${imdbId} → ${hit.source} ${hit.posterUrl}`);
+    return true;
+  } catch (error) {
+    console.warn(`WatchNow: series poster by IMDb id failed — ${(error as Error)?.message ?? error}`);
+    return false;
+  }
+}
+
 async function runBatch({
   fetchImpl = fetch,
   sleep = defaultSleep,
