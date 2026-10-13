@@ -2,13 +2,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Thumb } from '@/components/thumb';
+import { fetchPlaylistWithItems } from '@/features/youtube/api';
 import {
   getPlaylist,
   getPlaylistVideos,
+  savePlaylist,
   type YoutubePlaylist,
   type YoutubeVideo,
 } from '@/features/youtube/store';
@@ -77,6 +88,7 @@ export default function YoutubePlaylistScreen() {
   const { width } = useWindowDimensions();
   const [playlist, setPlaylist] = useState<YoutubePlaylist | null>(null);
   const [videos, setVideos] = useState<YoutubeVideo[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const reload = useCallback(async () => {
     const numericId = Number(id);
@@ -91,6 +103,20 @@ export default function YoutubePlaylistScreen() {
       reload();
     }, [reload]),
   );
+
+  const refreshPlaylist = async () => {
+    if (refreshing || !playlist) return;
+    setRefreshing(true);
+    try {
+      const { meta, items } = await fetchPlaylistWithItems(playlist.playlistId);
+      await savePlaylist(meta, playlist.url, items);
+      await reload();
+    } catch (err) {
+      Alert.alert('Refresh failed', err instanceof Error ? err.message : 'Could not refresh this playlist.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (!playlist) return <View style={styles.container} />;
 
@@ -183,7 +209,20 @@ export default function YoutubePlaylistScreen() {
 
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Episodes</Text>
-          <Text style={styles.sectionCount}>{videos.length} videos</Text>
+          <View style={styles.sectionTools}>
+            <Text style={styles.sectionCount}>{videos.length} videos</Text>
+            <Pressable
+              onPress={() => void refreshPlaylist()}
+              hitSlop={8}
+              disabled={refreshing}
+              style={({ pressed }) => [styles.toolBtn, pressed && styles.pressed]}>
+              {refreshing ? (
+                <ActivityIndicator size="small" color={colors.textSecondary} />
+              ) : (
+                <Ionicons name="refresh-outline" size={18} color={colors.text} />
+              )}
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.episodeList}>
@@ -313,6 +352,15 @@ const styles = StyleSheet.create({
   sectionCount: {
     color: colors.textSecondary,
     fontSize: font.caption,
+  },
+  sectionTools: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  toolBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   episodeList: {
     paddingHorizontal: spacing.md,
