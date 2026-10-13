@@ -55,6 +55,14 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="tv"
+        options={{
+          title: 'TV',
+          tabBarAccessibilityLabel: 'TV',
+          tabBarIcon: ({ color }) => <Ionicons name="tv-outline" color={color} size={24} />,
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',

@@ -170,6 +170,28 @@ CREATE TABLE youtube_video (
 CREATE INDEX idx_youtube_video_playlist ON youtube_video(playlist_id, position);
 `;
 
+const V7 = `
+CREATE TABLE tv_playlist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  url TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  channel_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  synced_at INTEGER
+);
+
+CREATE TABLE tv_channel (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  playlist_id INTEGER NOT NULL REFERENCES tv_playlist(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  stream_url TEXT NOT NULL,
+  logo_url TEXT,
+  group_name TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_tv_channel_playlist ON tv_channel(playlist_id, name);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, sql: V1 },
   { version: 2, sql: V2 },
@@ -177,4 +199,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 4, sql: V4 },
   { version: 5, sql: V5 },
   { version: 6, sql: V6 },
+  { version: 7, sql: V7 },
 ];

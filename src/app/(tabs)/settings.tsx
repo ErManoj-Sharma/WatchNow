@@ -433,6 +433,15 @@ export default function SettingsScreen() {
         />
       </Section>
 
+      <Section title="TV">
+        <SettingRow
+          icon="tv-outline"
+          label="TV playlists"
+          hint="Add & manage playlist links"
+          onPress={() => router.push('/tv-playlists')}
+        />
+      </Section>
+
       <Section title="Maintenance">
         <SettingRow
           icon="trash-outline"

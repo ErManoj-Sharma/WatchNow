@@ -11,7 +11,7 @@ function migrate(): DatabaseSync {
   return db;
 }
 
-test('migrations apply in order and land on user_version 6', () => {
+test('migrations apply in order and land on user_version 7', () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON;');
   for (const m of MIGRATIONS) {
@@ -19,7 +19,7 @@ test('migrations apply in order and land on user_version 6', () => {
     db.exec(`PRAGMA user_version = ${m.version}`);
   }
   const { user_version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  assert.equal(user_version, 6);
+  assert.equal(user_version, 7);
 });
 
 test('youtube tables exist with expected columns', () => {
@@ -90,4 +90,39 @@ test('a video id is unique within a playlist but reusable across playlists', () 
   assert.equal((db.prepare('SELECT COUNT(*) c FROM youtube_video').get() as { c: number }).c, 2);
 
   assert.throws(() => insertVideo.run(a.id, 'sharedVideoId', 'dupe', 1), /UNIQUE/i);
+});
+
+test('tv tables exist and deleting a playlist cascades to its channels', () => {
+  const db = migrate();
+  const playlistCols = db
+    .prepare('PRAGMA table_info(tv_playlist)')
+    .all()
+    .map((r) => (r as { name: string }).name);
+  for (const col of ['url', 'name', 'channel_count', 'synced_at']) {
+    assert.ok(playlistCols.includes(col), `tv_playlist.${col} missing`);
+  }
+  const channelCols = db
+    .prepare('PRAGMA table_info(tv_channel)')
+    .all()
+    .map((r) => (r as { name: string }).name);
+  for (const col of ['playlist_id', 'name', 'stream_url', 'logo_url', 'group_name']) {
+    assert.ok(channelCols.includes(col), `tv_channel.${col} missing`);
+  }
+
+  db.prepare('INSERT INTO tv_playlist (url, name, channel_count, created_at) VALUES (?, ?, ?, ?)').run(
+    'https://cdn.example/hin.m3u',
+    'hin',
+    2,
+    1,
+  );
+  const { id } = db.prepare('SELECT id FROM tv_playlist').get() as { id: number };
+  const insertChannel = db.prepare(
+    'INSERT INTO tv_channel (playlist_id, name, stream_url, created_at) VALUES (?, ?, ?, ?)',
+  );
+  insertChannel.run(id, 'Aaj Tak', 'http://example.com/a.m3u8', 1);
+  insertChannel.run(id, '9X Jalwa', 'http://example.com/b.m3u8', 1);
+  assert.equal((db.prepare('SELECT COUNT(*) c FROM tv_channel').get() as { c: number }).c, 2);
+
+  db.exec('DELETE FROM tv_playlist');
+  assert.equal((db.prepare('SELECT COUNT(*) c FROM tv_channel').get() as { c: number }).c, 0);
 });
