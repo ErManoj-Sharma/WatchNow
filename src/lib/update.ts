@@ -63,18 +63,16 @@ export async function downloadUpdate(onProgress?: (pct: number) => void): Promis
 /** Open the Android package installer; false when unavailable (Expo Go / non-Android). */
 export async function openInstaller(fileUri: string): Promise<boolean> {
   if (Platform.OS !== 'android') return false;
-  try {
-    const IntentLauncher = await import('expo-intent-launcher');
-    const contentUri = await getContentUriAsync(fileUri);
-    await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-      data: contentUri,
-      type: 'application/vnd.android.package-archive',
-      flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  // No silent catch: without REQUEST_INSTALL_PACKAGES (or with a bad content URI)
+  // the intent fails and callers must fall through to their share/browser fallback.
+  const IntentLauncher = await import('expo-intent-launcher');
+  const contentUri = await getContentUriAsync(fileUri);
+  await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+    data: contentUri,
+    type: 'application/vnd.android.package-archive',
+    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+  });
+  return true;
 }
 
 /** Download the update and hand it to the installer (share-sheet fallback). */

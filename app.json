@@ -13,7 +13,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ermanojsharma.WatchNow"
+      "package": "com.ermanojsharma.WatchNow",
+      "permissions": ["REQUEST_INSTALL_PACKAGES"]
     },
     "web": {
       "output": "static",
