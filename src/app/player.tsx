@@ -63,6 +63,7 @@ export default function PlayerScreen() {
   const [playing, setPlaying] = useState(false);
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
   const [vlcTracks, setVlcTracks] = useState<{ id: number; name: string; selected?: boolean }[]>([]);
+  const [vlcSubId, setVlcSubId] = useState(-1); // libVLC: -1 = subtitles off
   const [barHeight, setBarHeight] = useState(0);
   const [ratio, setRatio] = useState<RatioMode>('Fit');
   const [ratioFlash, setRatioFlash] = useState<RatioMode | null>(null);
@@ -224,6 +225,7 @@ export default function PlayerScreen() {
     log('switchToVlc', 'uri=', uri, 'resumeMs=', resumeRef.current);
     vlcUriRef.current = uri;
     setError(null);
+    setVlcSubId(-1);
     setEngine('vlc');
   }, []);
 
@@ -375,6 +377,20 @@ export default function PlayerScreen() {
   }, [player]);
 
   const cycleSubtitle = useCallback(() => {
+    if (engineRef.current === 'vlc') {
+      // The expo player is dead after handoff — subtitle selection must go to VLC.
+      vlcRef.current?.getSubtitleTracks().then((tracks) => {
+        log('cycleSubtitle engine= vlc tracks=', JSON.stringify(tracks), 'current=', vlcSubId);
+        if (tracks.length === 0) return;
+        const idx = tracks.findIndex((t) => t.id === vlcSubId);
+        // Tracks include a Disable entry (id -1); wrapping past the last real track turns subs off.
+        const next = tracks[(idx + 1) % tracks.length];
+        log('setSubtitleTrack engine= vlc to=', next.id, next.name);
+        vlcRef.current?.setSubtitleTrack(next.id).catch(() => undefined);
+        setVlcSubId(next.id);
+      }).catch(() => undefined);
+      return;
+    }
     const tracks = player.availableSubtitleTracks;
     log('cycleSubtitle', 'engine=', engineRef.current, 'available=', tracks.length, 'current=', player.subtitleTrack?.id ?? 'off');
     if (tracks.length === 0) return;
@@ -388,7 +404,7 @@ export default function PlayerScreen() {
     const idx = tracks.findIndex((t) => t.id === current.id);
     // Past the last track → off
     player.subtitleTrack = idx >= 0 && idx + 1 < tracks.length ? tracks[idx + 1] : null;
-  }, [player]);
+  }, [player, vlcSubId]);
 
   const seekRatio = (locationX: number) => Math.min(1, Math.max(0, locationX / Math.max(1, barWidthRef.current)));
 
@@ -554,7 +570,9 @@ export default function PlayerScreen() {
   const titleMain = isEpisode ? (entry?.seriesTitle ?? '') : (media?.fileName ?? '');
   const titleSub = isEpisode ? `Season ${entry?.seasonNumber} · Episode ${entry?.episodeNumber}` : null;
 
-  const subtitleLabel = player.subtitleTrack && player.subtitleTrack.id !== 'off' ? 'CC ON' : 'CC';
+  const subtitleLabel = engine === 'vlc'
+    ? (vlcSubId !== -1 ? 'CC ON' : 'CC')
+    : player.subtitleTrack && player.subtitleTrack.id !== 'off' ? 'CC ON' : 'CC';
   const audioLabel = engine === 'vlc'
     ? (vlcTracks.find((t) => t.selected)?.name ?? 'Audio')
     : player.audioTrack
@@ -595,17 +613,16 @@ export default function PlayerScreen() {
     <View style={styles.container}>
       <StatusBar hidden={!controlsVisible} style="light" />
       {engine === 'vlc' ? (
-        ratio === '16:9' || ratio === '4:3' ? (
-          <View style={styles.ratioFrame}>
-            <VlcVideoView
-              ref={vlcRef}
-              style={{ width: frameW, height: frameW / frameAR }}
-              {...vlcEventProps}
-            />
-          </View>
-        ) : (
-          <VlcVideoView ref={vlcRef} style={StyleSheet.absoluteFill} {...vlcEventProps} />
-        )
+        // Single persistent mount across ratio modes: the MediaPlayer lives inside the
+        // native view — swapping branches would destroy it (cleanup on destroy) and the
+        // freshly mounted view would sit empty with no way to reload.
+        <View style={styles.ratioFrame}>
+          <VlcVideoView
+            ref={vlcRef}
+            style={ratio === '16:9' || ratio === '4:3' ? { width: frameW, height: frameW / frameAR } : StyleSheet.absoluteFill}
+            {...vlcEventProps}
+          />
+        </View>
       ) : ratio === '16:9' || ratio === '4:3' ? (
         <View style={styles.ratioFrame}>
           <VideoView

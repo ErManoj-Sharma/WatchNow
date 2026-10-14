@@ -1,6 +1,7 @@
 package expo.modules.vlcplayer
 
 import android.content.Context
+import android.graphics.SurfaceTexture
 import android.net.Uri
 import android.os.Looper
 import android.os.ParcelFileDescriptor
@@ -24,6 +25,11 @@ class VlcPlayerView(context: Context, appContext: AppContext) : ExpoView(context
   override val shouldUseAndroidLayout: Boolean = true
 
   private val videoLayout = VLCVideoLayout(context)
+  // libVLC's VideoHelper never wires a subtitle surface in TextureView mode, so the
+  // selected SPU track has nowhere to render (track selects, nothing appears). We feed
+  // libVLC this overlay TextureView's SurfaceTexture manually — see ensurePlayer for
+  // the required ordering.
+  private val subtitleTexture = TextureView(context)
   private var libVLC: LibVLC? = null
   private var mediaPlayer: MediaPlayer? = null
   private var lastDurationSec = 0.0
@@ -44,6 +50,7 @@ class VlcPlayerView(context: Context, appContext: AppContext) : ExpoView(context
 
   init {
     addView(videoLayout, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    addView(subtitleTexture, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
   }
 
   private fun ensurePlayer(): MediaPlayer {
@@ -58,6 +65,26 @@ class VlcPlayerView(context: Context, appContext: AppContext) : ExpoView(context
     // Native's view hierarchy here (play() defers forever on areSurfacesWaiting).
     // TextureView composites normally and works at any nesting depth.
     mp.attachViews(videoLayout, null, false, true)
+    // Subtitle surface, AFTER attachViews: AWindow.onSurfaceCreated demands state
+    // ATTACHED, while setSubtitlesView() is only legal at INIT — registering an already
+    // live TextureView there crashes with "invalid state". setSubtitlesSurface() from
+    // the ATTACHED state is the supported route; never let a subtitle failure kill playback.
+    val vout = mp.getVLCVout()
+    val attachSubs: (SurfaceTexture) -> Unit = { st ->
+      try {
+        vout.setSubtitlesSurface(st)
+        Log.d(TAG, "setSubtitlesSurface ok")
+      } catch (e: Exception) {
+        Log.e(TAG, "setSubtitlesSurface failed", e)
+      }
+    }
+    subtitleTexture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+      override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) = attachSubs(st)
+      override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) = Unit
+      override fun onSurfaceTextureDestroyed(st: SurfaceTexture) = true
+      override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
+    }
+    subtitleTexture.surfaceTexture?.let(attachSubs)
     mediaPlayer = mp
     logSurfaceDiagnostics("attach")
     postDelayed({ logSurfaceDiagnostics("attach+1s") }, 1000)
@@ -188,6 +215,22 @@ class VlcPlayerView(context: Context, appContext: AppContext) : ExpoView(context
     return mediaPlayer?.setAudioTrack(trackId) ?: false
   }
 
+  fun getSubtitleTracks(): List<Map<String, Any>> {
+    val mp = mediaPlayer ?: return emptyList()
+    // Explicit getters: Kotlin doesn't synthesize spus/spuTrack properties here.
+    val currentId = mp.getSpuTrack()
+    return mp.getSpuTracks()?.map { track ->
+      mapOf("id" to track.id, "name" to (track.name ?: ""), "selected" to (track.id == currentId))
+    } ?: emptyList()
+  }
+
+  fun setSubtitleTrack(trackId: Int): Boolean {
+    // -1 = Disable (libVLC's DisableSpu); same convention as audio tracks.
+    val ok = mediaPlayer?.setSpuTrack(trackId) ?: false
+    Log.d(TAG, "setSubtitleTrack id=$trackId ok=$ok")
+    return ok
+  }
+
   private fun applyPendingSeek() {
     if (!pendingSeek) return
     val mp = mediaPlayer ?: return
@@ -248,6 +291,7 @@ class VlcPlayerView(context: Context, appContext: AppContext) : ExpoView(context
 
   fun cleanup() {
     Log.d(TAG, "cleanup")
+    subtitleTexture.surfaceTextureListener = null
     mediaPlayer?.let {
       try {
         it.stop()

@@ -42,6 +42,14 @@ class VlcPlayerModule : Module() {
         view.setAudioTrack(trackId)
       }
 
+      AsyncFunction("getSubtitleTracks") { view: VlcPlayerView ->
+        view.getSubtitleTracks()
+      }
+
+      AsyncFunction("setSubtitleTrack") { view: VlcPlayerView, trackId: Int ->
+        view.setSubtitleTrack(trackId)
+      }
+
       OnViewDestroys { view: VlcPlayerView ->
         view.cleanup()
       }

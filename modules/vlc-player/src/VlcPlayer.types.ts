@@ -6,6 +6,8 @@ export type VlcAudioTrack = {
   selected?: boolean;
 };
 
+export type VlcSubtitleTrack = VlcAudioTrack;
+
 export type VlcVideoViewHandle = {
   loadSource: (uri: string, startPositionSeconds?: number) => Promise<void>;
   play: () => Promise<void>;
@@ -15,6 +17,8 @@ export type VlcVideoViewHandle = {
   setRate: (rate: number) => Promise<void>;
   getAudioTracks: () => Promise<VlcAudioTrack[]>;
   setAudioTrack: (id: number) => Promise<boolean>;
+  getSubtitleTracks: () => Promise<VlcSubtitleTrack[]>;
+  setSubtitleTrack: (id: number) => Promise<boolean>;
 };
 
 export type VlcVideoViewProps = {

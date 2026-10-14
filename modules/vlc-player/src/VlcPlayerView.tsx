@@ -1,9 +1,9 @@
 import { requireNativeView } from 'expo';
 import * as React from 'react';
 
-import type { VlcAudioTrack, VlcVideoViewHandle, VlcVideoViewProps } from './VlcPlayer.types';
+import type { VlcAudioTrack, VlcSubtitleTrack, VlcVideoViewHandle, VlcVideoViewProps } from './VlcPlayer.types';
 
-export type { VlcAudioTrack, VlcVideoViewHandle, VlcVideoViewProps };
+export type { VlcAudioTrack, VlcSubtitleTrack, VlcVideoViewHandle, VlcVideoViewProps };
 
 // Expo view events wrap single-value payloads as { payload: <value> } (see
 // expo-modules-core ViewEvent.convertEventBody); Unit events arrive as {}.
@@ -26,6 +26,8 @@ type NativeHandle = {
   setRate: (rate: number) => Promise<void>;
   getAudioTracks: () => Promise<VlcAudioTrack[]>;
   setAudioTrack: (id: number) => Promise<boolean>;
+  getSubtitleTracks: () => Promise<VlcSubtitleTrack[]>;
+  setSubtitleTrack: (id: number) => Promise<boolean>;
 };
 
 // The native view exposes AsyncFunctions (loadSource/play/pause/...) on its instance, so a
@@ -50,6 +52,8 @@ export const VlcVideoView = React.forwardRef<VlcVideoViewHandle, VlcVideoViewPro
         setRate: (rate) => nativeRef.current!.setRate(rate),
         getAudioTracks: () => nativeRef.current!.getAudioTracks(),
         setAudioTrack: (id) => nativeRef.current!.setAudioTrack(id),
+        getSubtitleTracks: () => nativeRef.current!.getSubtitleTracks(),
+        setSubtitleTrack: (id) => nativeRef.current!.setSubtitleTrack(id),
       }),
       [],
     );
