@@ -2,7 +2,7 @@
   "expo": {
     "name": "Watch Now",
     "slug": "WatchNow",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "watchnow",
@@ -14,7 +14,9 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.ermanojsharma.WatchNow",
-      "permissions": ["REQUEST_INSTALL_PACKAGES"]
+      "permissions": [
+        "REQUEST_INSTALL_PACKAGES"
+      ]
     },
     "web": {
       "output": "static",

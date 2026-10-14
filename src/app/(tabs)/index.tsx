@@ -131,7 +131,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setBlurTarget(rootRef.current);
+      setBlurTarget(rootRef);
       reload();
     }, [reload]),
   );

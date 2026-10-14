@@ -17,7 +17,7 @@ function TabBarBackground() {
           intensity={25}
           tint="dark"
           blurMethod="dimezisBlurViewSdk31Plus"
-          blurTarget={{ current: target }}
+          blurTarget={target ?? { current: null }}
           style={StyleSheet.absoluteFill}
         />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(1, 1, 1, 0.57)' }]} />

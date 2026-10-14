@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurTargetView } from 'expo-blur';
-import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -239,7 +238,7 @@ export default function SettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setBlurTarget(rootRef.current);
+      setBlurTarget(rootRef);
       reload();
     }, [reload]),
   );
@@ -325,301 +324,307 @@ export default function SettingsScreen() {
 
   return (
     <BlurTargetView ref={rootRef} style={styles.container}>
-    <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.background }}>
-      <Text style={styles.heading}>Settings</Text>
-    </View>
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{
-        paddingHorizontal: spacing.md,
-        paddingBottom: spacing.xl + 72,
-      }}>
-      <ScanIndicator />
-
-      <View style={styles.identity}>
-        <View style={styles.identityBadge}>
-          <Ionicons name="film" size={26} color={colors.accent} />
-        </View>
-        <View style={styles.identityBody}>
-          <Text style={styles.identityName}>WatchNow</Text>
-          <Text style={styles.identityTag}>Offline media library</Text>
-        </View>
-        <View style={styles.versionPill}>
-          <Text style={styles.versionPillText}>{installed}</Text>
-        </View>
+      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.background }}>
+        <Text style={styles.heading}>Settings</Text>
       </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: spacing.md,
+          paddingBottom: spacing.xl + 72,
+        }}>
+        <ScanIndicator />
 
-      <Section title="Customization">
-        <SettingRow
-          icon="options-outline"
-          label="Home screen sections"
-          hint="Choose what appears on the Home tab"
-          onPress={() => setCustomOpen(true)}
-        />
-      </Section>
-
-      <Section title="Library">
-        <SettingRow
-          icon="folder-open"
-          label={
-            root?.displayName
-              ? root.displayName.charAt(0).toUpperCase() + root.displayName.slice(1)
-              : 'No folder selected'
-          }
-          hint={root?.documentUri ?? 'Pick a folder to start scanning'}
-          onPress={onChangeFolder}
-          divider
-        />
-        <SettingRow
-          icon="time-outline"
-          label="Last scan"
-          value={formatTimestamp(root?.lastSuccessfulScanAt)}
-          divider
-        />
-        <SettingRow
-          icon={
-            !root
-              ? 'alert-circle-outline'
-              : accessible
-                ? 'checkmark-circle-outline'
-                : 'warning-outline'
-          }
-          label={
-            !root
-              ? 'Folder access not set up'
-              : accessible
-                ? 'Folder access OK'
-                : 'Permission lost — reselect the folder'
-          }
-          tint={!root ? colors.textMuted : accessible ? colors.success : colors.warning}
-          divider
-        />
-        <SettingRow icon="refresh" label="Rescan library" onPress={() => startScan()} divider />
-        <SettingRow
-          icon="swap-horizontal"
-          label={root ? 'Change folder' : 'Choose folder'}
-          onPress={onChangeFolder}
-          {...(root && !accessible ? { divider: true } : {})}
-        />
-        {root && !accessible ? (
-          <SettingRow icon="lock-open-outline" label="Re-grant access" onPress={onChangeFolder} />
-        ) : null}
-      </Section>
-
-      <Section title="Index">
-        <SettingRow
-          icon="stats-chart-outline"
-          label="Index details"
-          hint="Counts, file total & library size"
-          onPress={() => setIndexOpen(true)}
-        />
-      </Section>
-
-      <Section title="Artwork">
-        <SettingRow
-          icon="color-wand-outline"
-          label="Artwork settings"
-          hint="Poster providers, API keys & refresh"
-          onPress={() => setArtworkOpen(true)}
-        />
-      </Section>
-
-      <Section title="YouTube">
-        <SettingRow
-          icon="logo-youtube"
-          label="YouTube playlists"
-          hint="Add & manage playlists"
-          onPress={() => router.push('/youtube')}
-        />
-      </Section>
-
-      <Section title="TV">
-        <SettingRow
-          icon="tv-outline"
-          label="TV playlists"
-          hint="Add & manage playlist links"
-          onPress={() => router.push('/tv-playlists')}
-        />
-      </Section>
-
-      <Section title="Maintenance">
-        <SettingRow
-          icon="trash-outline"
-          label="Clear thumbnail cache"
-          onPress={() => {
-            clearThumbnailCache()
-              .then(() => Alert.alert('Done', 'Thumbnail cache cleared.'))
-              .catch(() => Alert.alert('Error', 'Could not clear thumbnail cache.'));
-          }}
-          divider
-        />
-        <SettingRow
-          icon="list-outline"
-          label="Classification review"
-          onPress={() => router.push('/review')}
-        />
-      </Section>
-
-      <Section title="About">
-        <SettingRow
-          icon={hasUpdate ? 'arrow-down-circle' : 'arrow-down-circle-outline'}
-          label="Update app"
-          tint={hasUpdate ? colors.warning : undefined}
-          accessory={
-            downloadPct !== null ? (
-              <>
-                <Text style={styles.pctText}>{downloadPct}%</Text>
-                <ActivityIndicator size="small" color={colors.accent} />
-              </>
-            ) : (
-              <>
-                {hasUpdate ? (
-                  <View style={styles.newBadge}>
-                    <Text style={styles.newBadgeText}>NEW</Text>
-                  </View>
-                ) : null}
-                <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-              </>
-            )
-          }
-          onPress={onUpdateApp}
-          divider
-        />
-        <SettingRow icon="information-circle-outline" label="Installed version" value={installed} divider />
-        <SettingRow
-          icon="sparkles-outline"
-          label="Latest version"
-          value={latest?.version ?? '—'}
-          tint={hasUpdate ? colors.warning : undefined}
-          divider
-        />
-        <SettingRow
-          icon="refresh-outline"
-          label="Check for updates"
-          onPress={checking ? undefined : checkUpdates}
-          accessory={
-            checking ? <ActivityIndicator size="small" color={colors.accent} /> : undefined
-          }
-          divider
-        />
-        <SettingRow
-          icon="share-social-outline"
-          label="Share app"
-          hint="Send the download link to a friend"
-          onPress={onShareApp}
-          divider
-        />
-        <SettingRow
-          icon="help-circle-outline"
-          label="How to use"
-          hint="A quick guide to WatchNow"
-          onPress={() => router.push('/how-to-use')}
-        />
-      </Section>
-
-      <Text style={styles.footer}>
-        WatchNow v{installed} ({Constants.expoConfig?.android?.versionCode ?? 1}) · playback never leaves your device
-      </Text>
-      <Text style={styles.footer}>
-        This product uses the TMDB API but is not endorsed or certified by TMDB. Show data from{' '}
-        <Text style={styles.link} onPress={() => Linking.openURL('https://www.tvmaze.com/api')}>
-          TVmaze
-        </Text>
-        . Movie data from OMDb.
-      </Text>
-
-      <InfoModal visible={customOpen} title="Customization" onClose={() => setCustomOpen(false)}>
-        <Text style={styles.hint}>Show or hide sections on the Home tab. Changes apply the next time Home loads.</Text>
-        <View style={styles.modalRows}>
-          <ToggleRow
-            icon="time-outline"
-            label="Show recently added"
-            hint="Row of the newest movies and series"
-            value={prefs.recentlyAdded}
-            onValueChange={(v) => onTogglePref('recentlyAdded', v)}
-            divider
-          />
-          <ToggleRow
-            icon="play-circle-outline"
-            label="Show continue watching"
-            hint="Row of half-watched videos"
-            value={prefs.continueWatching}
-            onValueChange={(v) => onTogglePref('continueWatching', v)}
-            divider
-          />
-          <ToggleRow
-            icon="heart-outline"
-            label="Show My Favorites"
-            hint="Favorites row above Movies"
-            value={prefs.favorites}
-            onValueChange={(v) => onTogglePref('favorites', v)}
-            divider
-          />
-          <ToggleRow
-            icon="logo-youtube"
-            label="Show YouTube shows"
-            hint="Coming in a future update"
-            value={prefs.youtubeShows}
-            onValueChange={(v) => onTogglePref('youtubeShows', v)}
-          />
+        <View style={styles.identity}>
+          <View style={styles.identityBadge}>
+            <Ionicons name="film" size={26} color={colors.accent} />
+          </View>
+          <View style={styles.identityBody}>
+            <Text style={styles.identityName}>WatchNow</Text>
+            <Text style={styles.identityTag}>Offline media library</Text>
+          </View>
+          <View style={styles.versionPill}>
+            <Text style={styles.versionPillText}>{installed}</Text>
+          </View>
         </View>
-      </InfoModal>
 
-      <InfoModal visible={artworkOpen} title="Artwork" onClose={() => setArtworkOpen(false)}>
-        <Text style={styles.hint}>
-          Fetches cover art from TMDB, TVmaze and OMDb; local video frames stay as fallback. Keys are stored only on
-          this device. TMDB is blocked on some Indian ISPs; the others still work.
-        </Text>
-        <Text style={styles.fieldLabel}>TMDB API key</Text>
-        <TextInput
-          value={tmdbKey}
-          onChangeText={setTmdbKey}
-          onBlur={() => saveKey('tmdb_api_key', tmdbKey)}
-          placeholder="tmdb.org/settings/api"
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          style={styles.input}
-        />
-        {tmdbSaved ? <Text style={styles.saved}>Saved</Text> : null}
-        <Text style={styles.fieldLabel}>OMDb API key (optional)</Text>
-        <TextInput
-          value={omdbKey}
-          onChangeText={setOmdbKey}
-          onBlur={() => saveKey('omdb_api_key', omdbKey)}
-          placeholder="omdbapi.com"
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          style={styles.input}
-        />
-        {omdbSaved ? <Text style={styles.saved}>Saved</Text> : null}
-        <View style={styles.modalRows}>
+        <Section title="Customization">
+          <SettingRow
+            icon="options-outline"
+            label="Home screen sections"
+            hint="Choose what appears on the Home tab"
+            onPress={() => setCustomOpen(true)}
+          />
+        </Section>
+
+        <Section title="Library">
+          <SettingRow
+            icon="folder-open"
+            label={
+              root?.displayName
+                ? root.displayName.charAt(0).toUpperCase() + root.displayName.slice(1)
+                : 'No folder selected'
+            }
+            hint={root?.documentUri ?? 'Pick a folder to start scanning'}
+            onPress={onChangeFolder}
+            divider
+          />
+          <SettingRow
+            icon="time-outline"
+            label="Last scan"
+            value={formatTimestamp(root?.lastSuccessfulScanAt)}
+            divider
+          />
+          <SettingRow
+            icon={
+              !root
+                ? 'alert-circle-outline'
+                : accessible
+                  ? 'checkmark-circle-outline'
+                  : 'warning-outline'
+            }
+            label={
+              !root
+                ? 'Folder access not set up'
+                : accessible
+                  ? 'Folder access OK'
+                  : 'Permission lost — reselect the folder'
+            }
+            tint={!root ? colors.textMuted : accessible ? colors.success : colors.warning}
+            divider
+          />
+          <SettingRow icon="refresh" label="Rescan library" onPress={() => startScan()} divider />
+          <SettingRow
+            icon="swap-horizontal"
+            label={root ? 'Change folder' : 'Choose folder'}
+            onPress={onChangeFolder}
+            {...(root && !accessible ? { divider: true } : {})}
+          />
+          {root && !accessible ? (
+            <SettingRow icon="lock-open-outline" label="Re-grant access" onPress={onChangeFolder} />
+          ) : null}
+        </Section>
+
+        <Section title="Index">
+          <SettingRow
+            icon="stats-chart-outline"
+            label="Index details"
+            hint="Counts, file total & library size"
+            onPress={() => setIndexOpen(true)}
+          />
+        </Section>
+
+        <Section title="Artwork">
           <SettingRow
             icon="color-wand-outline"
-            label="Refresh all posters"
-            onPress={() => {
-              setArtworkOpen(false);
-              onRefreshPosters();
-            }}
+            label="Artwork settings"
+            hint="Poster providers, API keys & refresh"
+            onPress={() => setArtworkOpen(true)}
           />
-        </View>
-      </InfoModal>
+        </Section>
 
-      <InfoModal visible={indexOpen} title="Index" onClose={() => setIndexOpen(false)}>
-        <View style={styles.statStrip}>
-          <Stat value={String(stats?.movieCount ?? 0)} label="Movies" />
-          <Stat value={String(stats?.seriesCount ?? 0)} label="Series" />
-          <Stat value={String(stats?.episodeCount ?? 0)} label="Episodes" />
-        </View>
-        <View style={styles.sizeStrip}>
-          <Row label="Video files" value={String(stats?.mediaCount ?? 0)} divider />
-          <Row label="Total size" value={formatBytes(stats?.totalBytes) || '—'} />
-        </View>
-      </InfoModal>
-    </ScrollView>
+        <Section title="YouTube">
+          <SettingRow
+            icon="logo-youtube"
+            label="YouTube playlists"
+            hint="Add & manage playlists"
+            onPress={() => router.push('/youtube')}
+          />
+        </Section>
+
+        <Section title="TV">
+          <SettingRow
+            icon="tv-outline"
+            label="TV playlists"
+            hint="Add & manage playlist links"
+            onPress={() => router.push('/tv-playlists')}
+          />
+        </Section>
+
+        <Section title="Maintenance">
+          <SettingRow
+            icon="trash-outline"
+            label="Clear thumbnail cache"
+            onPress={() => {
+              clearThumbnailCache()
+                .then(() => Alert.alert('Done', 'Thumbnail cache cleared.'))
+                .catch(() => Alert.alert('Error', 'Could not clear thumbnail cache.'));
+            }}
+            divider
+          />
+          <SettingRow
+            icon="list-outline"
+            label="Classification review"
+            onPress={() => router.push('/review')}
+          />
+        </Section>
+
+        <Section title="About">
+          <SettingRow
+            icon={hasUpdate ? 'arrow-down-circle' : 'arrow-down-circle-outline'}
+            label="Update app"
+            tint={hasUpdate ? colors.warning : undefined}
+            accessory={
+              downloadPct !== null ? (
+                <>
+                  <Text style={styles.pctText}>{downloadPct}%</Text>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                </>
+              ) : (
+                <>
+                  {hasUpdate ? (
+                    <View style={styles.newBadge}>
+                      <Text style={styles.newBadgeText}>NEW</Text>
+                    </View>
+                  ) : null}
+                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                </>
+              )
+            }
+            onPress={onUpdateApp}
+            divider
+          />
+          <SettingRow icon="information-circle-outline" label="Installed version" value={installed} divider />
+          <SettingRow
+            icon="sparkles-outline"
+            label="Latest version"
+            value={latest?.version ?? '—'}
+            tint={hasUpdate ? colors.warning : undefined}
+            divider
+          />
+          <SettingRow
+            icon="refresh-outline"
+            label="Check for updates"
+            onPress={checking ? undefined : checkUpdates}
+            accessory={
+              checking ? <ActivityIndicator size="small" color={colors.accent} /> : undefined
+            }
+            divider
+          />
+          <SettingRow
+            icon="share-social-outline"
+            label="Share app"
+            hint="Send the download link to a friend"
+            onPress={onShareApp}
+            divider
+          />
+          <SettingRow
+            icon="help-circle-outline"
+            label="How to use"
+            hint="A quick guide to WatchNow"
+            onPress={() => router.push('/how-to-use')}
+          />
+        </Section>
+
+        <Text
+          style={[styles.footer, { color: colors.text }]}
+          onPress={() => Linking.openURL('https://manoj-sharma-portfolio.vercel.app/')}>
+          Built by ErManoj Sharma
+        </Text>
+
+        <Text style={styles.footer}>
+          WatchNow v{installed} · playback never leaves your device
+        </Text>
+        <Text style={styles.footer}>
+          This product uses the TMDB API but is not endorsed or certified by TMDB. Show data from{' '}
+          <Text style={styles.link} onPress={() => Linking.openURL('https://www.tvmaze.com/api')}>
+            TVmaze
+          </Text>
+          . Movie data from OMDb.
+        </Text>
+
+        <InfoModal visible={customOpen} title="Customization" onClose={() => setCustomOpen(false)}>
+          <Text style={styles.hint}>Show or hide sections on the Home tab. Changes apply the next time Home loads.</Text>
+          <View style={styles.modalRows}>
+            <ToggleRow
+              icon="time-outline"
+              label="Show recently added"
+              hint="Row of the newest movies and series"
+              value={prefs.recentlyAdded}
+              onValueChange={(v) => onTogglePref('recentlyAdded', v)}
+              divider
+            />
+            <ToggleRow
+              icon="play-circle-outline"
+              label="Show continue watching"
+              hint="Row of half-watched videos"
+              value={prefs.continueWatching}
+              onValueChange={(v) => onTogglePref('continueWatching', v)}
+              divider
+            />
+            <ToggleRow
+              icon="heart-outline"
+              label="Show My Favorites"
+              hint="Favorites row above Movies"
+              value={prefs.favorites}
+              onValueChange={(v) => onTogglePref('favorites', v)}
+              divider
+            />
+            <ToggleRow
+              icon="logo-youtube"
+              label="Show YouTube shows"
+              hint="Coming in a future update"
+              value={prefs.youtubeShows}
+              onValueChange={(v) => onTogglePref('youtubeShows', v)}
+            />
+          </View>
+        </InfoModal>
+
+        <InfoModal visible={artworkOpen} title="Artwork" onClose={() => setArtworkOpen(false)}>
+          <Text style={styles.hint}>
+            Fetches cover art from TMDB, TVmaze and OMDb; local video frames stay as fallback. Keys are stored only on
+            this device. TMDB is blocked on some Indian ISPs; the others still work.
+          </Text>
+          <Text style={styles.fieldLabel}>TMDB API key</Text>
+          <TextInput
+            value={tmdbKey}
+            onChangeText={setTmdbKey}
+            onBlur={() => saveKey('tmdb_api_key', tmdbKey)}
+            placeholder="tmdb.org/settings/api"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            style={styles.input}
+          />
+          {tmdbSaved ? <Text style={styles.saved}>Saved</Text> : null}
+          <Text style={styles.fieldLabel}>OMDb API key (optional)</Text>
+          <TextInput
+            value={omdbKey}
+            onChangeText={setOmdbKey}
+            onBlur={() => saveKey('omdb_api_key', omdbKey)}
+            placeholder="omdbapi.com"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            style={styles.input}
+          />
+          {omdbSaved ? <Text style={styles.saved}>Saved</Text> : null}
+          <View style={styles.modalRows}>
+            <SettingRow
+              icon="color-wand-outline"
+              label="Refresh all posters"
+              onPress={() => {
+                setArtworkOpen(false);
+                onRefreshPosters();
+              }}
+            />
+          </View>
+        </InfoModal>
+
+        <InfoModal visible={indexOpen} title="Index" onClose={() => setIndexOpen(false)}>
+          <View style={styles.statStrip}>
+            <Stat value={String(stats?.movieCount ?? 0)} label="Movies" />
+            <Stat value={String(stats?.seriesCount ?? 0)} label="Series" />
+            <Stat value={String(stats?.episodeCount ?? 0)} label="Episodes" />
+          </View>
+          <View style={styles.sizeStrip}>
+            <Row label="Video files" value={String(stats?.mediaCount ?? 0)} divider />
+            <Row label="Total size" value={formatBytes(stats?.totalBytes) || '—'} />
+          </View>
+        </InfoModal>
+      </ScrollView>
     </BlurTargetView>
   );
 }

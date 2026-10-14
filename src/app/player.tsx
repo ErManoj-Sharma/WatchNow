@@ -46,9 +46,6 @@ function remaining(seconds: number): string {
   return h > 0 ? `${h}h ${pad(m)}m ${pad(s)}s` : `${m}m ${pad(s)}s`;
 }
 
-// Step-by-step debug trail — view with: adb logcat -s ReactNativeJS VlcPlayer
-const log = (...args: unknown[]) => console.log('[player]', ...args);
-
 export default function PlayerScreen() {
   const params = useLocalSearchParams<{ mediaId?: string; entryId?: string }>();
   const mediaId = Number(params.mediaId);
@@ -119,13 +116,11 @@ export default function PlayerScreen() {
 
   useEffect(() => {
     engineRef.current = engine;
-    log('engine =', engine, '->', engine === 'vlc' ? 'VlcVideoView' : 'expo VideoView');
   }, [engine]);
 
   useEffect(() => {
     if (!Number.isFinite(mediaId)) return;
     let mounted = true;
-    log('loading media', 'mediaId=', mediaId);
     Promise.all([getMedia(mediaId), getProgress(mediaId), entryForMedia(mediaId)])
       .then(([m, prog, e]) => {
         if (!mounted) return;
@@ -133,15 +128,12 @@ export default function PlayerScreen() {
         setEntry(e);
         if (prog && !prog.completed) resumeRef.current = prog.positionMs;
         if (m) {
-          log('media loaded', 'uri=', m.documentUri, 'resumeMs=', resumeRef.current);
           player.replaceAsync(m.documentUri).catch((err) => {
-            log('replaceAsync FAILED:', err instanceof Error ? err.message : String(err));
             setError('Could not load file');
           });
         } else setError('File not found');
       })
       .catch((err) => {
-        log('media load FAILED:', err instanceof Error ? err.message : String(err));
         if (mounted) setError('Could not load file');
       });
     return () => {
@@ -182,7 +174,6 @@ export default function PlayerScreen() {
       setPositionSec(currentTime);
       if (currentTime - lastLoggedProgressRef.current >= 5 || currentTime < lastLoggedProgressRef.current) {
         lastLoggedProgressRef.current = currentTime;
-        log('progress', 'engine=', engineRef.current, 'pos=', currentTime.toFixed(1), 'dur=', lastDurRef.current.toFixed(1));
       }
       if (lastDurRef.current > 0) {
         const remainingSec = lastDurRef.current - currentTime;
@@ -208,10 +199,8 @@ export default function PlayerScreen() {
     // useVideoPlayer(null) fires a phantom playToEnd at mount (dur=0) — ignoring it
     // prevents marking the file completed with position 0.
     if (lastDurRef.current <= 0) {
-      log('ended ignored (duration not known yet)');
       return;
     }
-    log('ended', 'engine=', engineRef.current, 'dur=', lastDurRef.current.toFixed(1));
     lastPosRef.current = lastDurRef.current;
     saveNow(true);
     if (!nextCheckedRef.current) {
@@ -222,7 +211,6 @@ export default function PlayerScreen() {
 
   // Hand the current file to libVLC (used when expo-video hits a codec error).
   const switchToVlc = useCallback((uri: string) => {
-    log('switchToVlc', 'uri=', uri, 'resumeMs=', resumeRef.current);
     vlcUriRef.current = uri;
     setError(null);
     setVlcSubId(-1);
@@ -236,9 +224,7 @@ export default function PlayerScreen() {
     const uri = vlcUriRef.current;
     const startSeconds = lastPosRef.current > 0 ? lastPosRef.current : (resumeRef.current || 0) / 1000;
     const t = setTimeout(() => {
-      log('vlc loadSource', 'uri=', uri, 'startSec=', startSeconds.toFixed(1));
-      vlcRef.current?.loadSource(uri, startSeconds).catch((err) => {
-        log('vlc loadSource FAILED:', err instanceof Error ? err.message : String(err));
+      vlcRef.current?.loadSource(uri, startSeconds).catch(() => {
         setError('Could not play this file');
       });
     }, 50);
@@ -249,14 +235,12 @@ export default function PlayerScreen() {
     // After the VLC handoff the expo player object is still alive and keeps emitting;
     // its stale events must not stomp position/state owned by the VLC engine.
     if (engineRef.current !== 'expo') return;
-    log('statusChange', 'status=', status, 'error=', playerError?.message ?? null);
     if (status === 'error') {
       const raw = playerError?.message ?? 'This file could not be played.';
       // Device lacks a decoder for the audio/video codec (e.g. EAC3/Dolby on many phones)
       const codecIssue = /decoder init failed|unsupported type|eac3|ac3|no decoder/i.test(raw);
       // Hand codec-unsupported files to libVLC, which bundles its own decoders.
       if (codecIssue && media?.documentUri && engineRef.current === 'expo') {
-        log('codec error detected -> handing to VLC:', raw);
         switchToVlc(media.documentUri);
         return;
       }
@@ -273,7 +257,6 @@ export default function PlayerScreen() {
     }
     if (status === 'readyToPlay' && !seekedRef.current) {
       seekedRef.current = true;
-      log('readyToPlay', 'duration=', player.duration, 'resumeSec=', (resumeRef.current / 1000).toFixed(1));
       if (player.duration > 0) {
         lastDurRef.current = player.duration;
         setDurationSec(player.duration);
@@ -356,7 +339,6 @@ export default function PlayerScreen() {
   }, []);
 
   const togglePlay = useCallback(() => {
-    log('togglePlay', 'engine=', engineRef.current);
     if (engineRef.current === 'vlc') {
       if (vlcPlayingRef.current) {
         vlcRef.current?.pause();
@@ -380,19 +362,16 @@ export default function PlayerScreen() {
     if (engineRef.current === 'vlc') {
       // The expo player is dead after handoff — subtitle selection must go to VLC.
       vlcRef.current?.getSubtitleTracks().then((tracks) => {
-        log('cycleSubtitle engine= vlc tracks=', JSON.stringify(tracks), 'current=', vlcSubId);
         if (tracks.length === 0) return;
         const idx = tracks.findIndex((t) => t.id === vlcSubId);
         // Tracks include a Disable entry (id -1); wrapping past the last real track turns subs off.
         const next = tracks[(idx + 1) % tracks.length];
-        log('setSubtitleTrack engine= vlc to=', next.id, next.name);
         vlcRef.current?.setSubtitleTrack(next.id).catch(() => undefined);
         setVlcSubId(next.id);
       }).catch(() => undefined);
       return;
     }
     const tracks = player.availableSubtitleTracks;
-    log('cycleSubtitle', 'engine=', engineRef.current, 'available=', tracks.length, 'current=', player.subtitleTrack?.id ?? 'off');
     if (tracks.length === 0) return;
     const current = player.subtitleTrack;
     if (!current) {
@@ -421,7 +400,6 @@ export default function PlayerScreen() {
 
   const onSeekRelease = useCallback(() => {
     if (dragRef.current != null) {
-      log('seek', 'engine=', engineRef.current, 'to=', dragRef.current.toFixed(1), 'dur=', lastDurRef.current.toFixed(1));
       if (engineRef.current === 'vlc') {
         const dur = lastDurRef.current;
         if (dur > 0) vlcRef.current?.seek(dragRef.current / dur);
@@ -587,24 +565,20 @@ export default function PlayerScreen() {
   // Events for the libVLC fallback surface; they feed the same state the expo path uses.
   const vlcEventProps = {
     onDuration: (sec: number) => {
-      log('vlc onDuration', sec.toFixed(1));
       lastDurRef.current = sec;
       setDurationSec(sec);
     },
     onProgress: (sec: number) => handleProgress(sec, 0),
     onPlaying: () => {
-      log('vlc onPlaying');
       vlcPlayingRef.current = true;
       setPlaying(true);
     },
     onPaused: () => {
-      log('vlc onPaused');
       vlcPlayingRef.current = false;
       setPlaying(false);
     },
     onEnd: handleEnd,
     onError: (msg: string) => {
-      log('vlc onError', msg);
       setError(`Playback failed: ${msg}`);
     },
   };
@@ -842,13 +816,11 @@ export default function PlayerScreen() {
                   bumpChrome();
                   if (engineRef.current === 'vlc') {
                     vlcRef.current?.getAudioTracks().then((tracks) => {
-                      log('audioPicker open engine= vlc tracks=', JSON.stringify(tracks));
                       setVlcTracks(tracks);
                       setAudioPickerOpen((o) => !o);
                     }).catch(() => undefined);
                   } else {
                     const tracks = player.availableAudioTracks;
-                    log('audioPicker open', 'engine=', engineRef.current, 'tracks=', JSON.stringify(tracks.map((t) => ({ id: t.id, label: t.label, lang: t.language }))));
                     setAudioPickerOpen((o) => !o);
                   }
                 }}
@@ -890,7 +862,6 @@ export default function PlayerScreen() {
               <Pressable
                 key={t.id}
                 onPress={() => {
-                  log('setAudioTrack engine= vlc from=', vlcTracks.find((x) => x.selected)?.id ?? null, 'to=', t.id, t.name);
                   vlcRef.current?.setAudioTrack(t.id).catch(() => undefined);
                   setVlcTracks((list) => list.map((x) => ({ ...x, selected: x.id === t.id })));
                   setAudioPickerOpen(false);
@@ -904,9 +875,7 @@ export default function PlayerScreen() {
               <Pressable
                 key={t.id ?? i}
                 onPress={() => {
-                  log('setAudioTrack', 'engine=', engineRef.current, 'from=', player.audioTrack?.id ?? null, 'to=', t.id, t.label, t.language ?? '');
                   player.audioTrack = t;
-                  log('setAudioTrack done, now=', player.audioTrack?.id ?? null);
                   setAudioPickerOpen(false);
                   bumpChrome();
                 }}
